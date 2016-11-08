@@ -60,6 +60,7 @@ public class PrefixContribs extends HttpServlet
     {
         if (ServletUtils.checkBlacklist(request, response))
             return;
+        ServletUtils.addSecurityHeaders(response);
         response.setContentType("text/html; charset=UTF-8");
         PrintWriter out = response.getWriter();
         StringBuilder buffer = new StringBuilder(50000);
@@ -102,7 +103,7 @@ public class PrefixContribs extends HttpServlet
         if (prefix != null)
         {
             if (prefix.length() < 4)
-                buffer.append("Error: search key of insufficient length.\n");
+                buffer.append("<span class=\"error\">ERROR: search key of insufficient length.</span>\n");
             else
             {
                 Calendar cutoff = new GregorianCalendar(TimeZone.getTimeZone("UTC"));

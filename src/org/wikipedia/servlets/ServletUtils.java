@@ -46,6 +46,21 @@ public class ServletUtils
     }
     
     /**
+     *  Adds security headers to servlet responses.
+     *  @param response the servlet response to add headers to
+     */
+    public static void addSecurityHeaders(HttpServletResponse response)
+    {
+        // Enable HSTS (force HTTPS)
+        response.setHeader("Strict-Transport-Security", "max-age=31536000");
+        response.setHeader("Content-Security-Policy", 
+            "frame-ancestors 'none'; " + // disable framing
+            "default-src 'none'; " +     // disable everything by default
+            "script-src 'self'; " +      // allow only scripts from this domain
+            "style-src 'self'");         // allow only stylesheets from this domain
+    }
+    
+    /**
      *  Strips &lt; &gt; and other unwanted stuff that leads to XSS attacks.
      *  Borrowed from http://greatwebguy.com/programming/java/simple-cross-site-scripting-xss-servlet-filter
      *  @param input an input string

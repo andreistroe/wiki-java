@@ -1,6 +1,6 @@
 /**
  *  @(#)WikiUnitTest.java 0.31 29/08/2015
- *  Copyright (C) 2014-2015 MER-C
+ *  Copyright (C) 2014-2016 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -41,6 +41,7 @@ public class WikiUnitTest
     
     /**
      *  Initialize wiki objects.
+     *  @throws Exception if a network error occurs
      */
     @BeforeClass
     public static void setUpClass() throws Exception
@@ -168,12 +169,107 @@ public class WikiUnitTest
     {
         assertArrayEquals("getPageHistory: non-existent page", new Wiki.Revision[0], enWiki.getPageHistory("EOTkd&ssdf"));
         assertArrayEquals("getPageHistory: special page", new Wiki.Revision[0], enWiki.getPageHistory("Special:Specialpages"));
+        
+        // test for RevisionDeleted revisions
+        Wiki.Revision[] history = testWiki.getPageHistory("User:MER-C/UnitTests/Delete");
+        for (Wiki.Revision rev : history)
+        {
+            if (rev.getRevid() == 275553L)
+            {
+                assertTrue("revdeled history: content", rev.isContentDeleted());
+                assertTrue("revdeled history: user", rev.isUserDeleted());
+                assertTrue("revdeled history: summary", rev.isSummaryDeleted());
+                break;
+            }
+        }
+    }
+    
+    @Test
+    public void getIPBlockList() throws Exception
+    {
+        // https://en.wikipedia.org/wiki/Special:Blocklist/Nimimaan
+        // see also getLogEntries() below
+        Wiki.LogEntry[] le = enWiki.getIPBlockList("Nimimaan");
+        assertEquals("getIPBlockList: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
+        assertEquals("getIPBlockList: user", "MER-C", le[0].getUser().getUsername());
+        assertEquals("getIPBlockList: log", Wiki.BLOCK_LOG, le[0].getType());
+        assertEquals("getIPBlockList: action", "block", le[0].getAction());
+        assertEquals("getIPBlockList: target", "User:Nimimaan", le[0].getTarget());
+        assertEquals("getIPBlockList: reason", "spambot", le[0].getReason());
+//        assertEquals("getLogEntries/block: parameters", new Object[] {
+//            false, true, // hard block (not anon only), account creation disabled,
+//            false, true, // autoblock enabled, email disabled
+//            true, "indefinite" // talk page access revoked, expiry
+//        }, le[0].getDetails());
+        
+        // This IP address should not be blocked (it is reserved)
+        le = enWiki.getIPBlockList("0.0.0.0");
+        assertEquals("getIPBlockList: not blocked", 0, le.length);
+    }
+    
+    @Test
+    public void getLogEntries() throws Exception
+    {
+        // https://en.wikipedia.org/w/api.php?action=query&list=logevents&letitle=User:Nimimaan&format=xmlfm
+        
+        // Block log
+        Calendar c = new GregorianCalendar(2016, Calendar.JUNE, 30);
+        Wiki.LogEntry[] le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "",
+            null, "User:Nimimaan", Wiki.ALL_NAMESPACES);
+        assertEquals("getLogEntries: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
+        assertEquals("getLogEntries/block: user", "MER-C", le[0].getUser().getUsername());
+        assertEquals("getLogEntries/block: log", Wiki.BLOCK_LOG, le[0].getType());
+        assertEquals("getLogEntries/block: action", "block", le[0].getAction());
+        assertEquals("getLogEntries: target", "User:Nimimaan", le[0].getTarget());
+        assertEquals("getLogEntries: reason", "spambot", le[0].getReason());
+//        assertEquals("getLogEntries/block: parameters", new Object[] {
+//            false, true, // hard block (not anon only), account creation disabled,
+//            false, true, // autoblock enabled, email disabled
+//            true, "indefinite" // talk page access revoked, expiry
+//        }, le[0].getDetails());
+        
+        // New user log
+        assertEquals("getLogEntries/newusers: user", "Nimimaan", le[1].getUser().getUsername());
+        assertEquals("getLogEntries/newusers: log", Wiki.USER_CREATION_LOG, le[1].getType());
+        assertEquals("getLogEntries/newusers: action", "create", le[1].getAction());
+        assertEquals("getLogEntries/newusers: reason", "", le[1].getReason());
+//        assertNull("getLogEntries/newusers: parameters", le[1].getDetails());
+        
+        // https://en.wikipedia.org/w/api.php?action=query&list=logevents&letitle=Talk:96th%20Test%20Wing/Temp&format=xmlfm
+        
+        // Move log
+        le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "", null, 
+            "Talk:96th Test Wing/Temp", Wiki.ALL_NAMESPACES);
+        assertEquals("getLogEntries/move: log", Wiki.MOVE_LOG, le[0].getType());
+        assertEquals("getLogEntries/move: action", "move", le[0].getAction());
+        // TODO: test for new title, redirect suppression
+        
+        // Patrol log
+        assertEquals("getLogEntries/patrol: log", Wiki.PATROL_LOG, le[1].getType());
+        assertEquals("getLogEntries/patrol: action", "autopatrol", le[1].getAction());
+        
+        // RevisionDeleted log entries, no access
+        // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&letitle=User%3AMER-C%2FTest
+        le = testWiki.getLogEntries("User:MER-C/Test");
+        assertNull("getLogEntries: reason hidden", le[0].getReason());
+        assertTrue("getLogEntries: reason hidden", le[0].isReasonDeleted());
+        assertNull("getLogEntries: user hidden", le[0].getUser());
+        assertTrue("getLogEntries: user hidden", le[0].isUserDeleted());
+        // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&leuser=MER-C
+        //     &lestart=20161002050030&leend=20161002050000&letype=delete
+        le = testWiki.getLogEntries(
+            testWiki.timestampToCalendar("20161002050030", false),
+            testWiki.timestampToCalendar("20161002050000", false), 
+            Integer.MAX_VALUE, Wiki.DELETION_LOG, "", testWiki.getUser("MER-C"), 
+            "", Wiki.ALL_NAMESPACES);
+        assertNull("getLogEntries: action hidden", le[0].getTarget());
+        assertTrue("getLogEntries: action hidden", le[0].isTargetDeleted());
     }
     
     @Test
     public void getPageInfo() throws Exception
     {
-        Map<String, Object>[] pageinfo = enWiki.getPageInfo(new String[] { "Main Page", "IPod" });
+        Map<String, Object>[] pageinfo = enWiki.getPageInfo(new String[] { "Main Page", "IPod", "Main_Page" });
         
         // Main Page
         Map<String, Object> protection = (Map<String, Object>)pageinfo[0].get("protection");
@@ -186,6 +282,9 @@ public class WikiUnitTest
         
         // different display title
         assertEquals("getPageInfo: iPod display title", "iPod", pageinfo[1].get("displaytitle"));
+        
+        // Main_Page (duplicate, should be removed)
+        assertEquals("getPageInfo: duplicate", pageinfo[0], pageinfo[2]);
     }
     
     @Test
@@ -260,6 +359,7 @@ public class WikiUnitTest
         Map<String, Object> info = enWiki.getSiteInfo();
         assertTrue("siteinfo: caplinks true", (Boolean)info.get("usingcapitallinks"));
         assertEquals("siteinfo: scriptpath", "/w", (String)info.get("scriptpath"));
+        assertEquals("siteinfo: timezone", "UTC", (String)info.get("timezone"));
         info = enWikt.getSiteInfo();
         assertFalse("siteinfo: caplinks false", (Boolean)info.get("usingcapitallinks"));
     }
@@ -280,6 +380,20 @@ public class WikiUnitTest
         assertEquals("normalize", "Wiktionary:main page", enWikt.normalize("Wiktionary:main page"));
         assertEquals("normalize", "Wiktionary:main page", enWikt.normalize("wiktionary:main page"));
         
+    }
+    
+    @Test
+    public void pageHasTemplate() throws Exception
+    {
+        boolean[] b = enWiki.pageHasTemplate(new String[]
+        {
+            "Wikipedia:Articles for deletion/Log/2016 September 20",
+            "Main Page",
+            "dsigusodgusdigusd" // non-existent, should be false
+        }, "Wikipedia:Articles for deletion/FMJAM");
+        assertTrue("pageHasTemplate: true", b[0]);
+        assertFalse("pageHasTemplate: false", b[1]);
+        assertFalse("pageHasTemplate: non-existent", b[2]);
     }
     
     @Test
@@ -311,8 +425,7 @@ public class WikiUnitTest
         assertNull("getRevision: user revdeled", rev.getUser());
         assertTrue("getRevision: user revdeled", rev.isUserDeleted());
         assertTrue("getRevision: summary revdeled", rev.isSummaryDeleted());
-        // NOT IMPLEMENTED:
-        // assertTrue("getRevision: content revdeled", rev.isContentDeleted());
+        assertTrue("getRevision: content revdeled", rev.isContentDeleted());
     }
     
     @Test
@@ -326,18 +439,36 @@ public class WikiUnitTest
     {
         // should really be null, but the API returns zero
         assertEquals("contribs: non-existent user", testWiki.contribs("Dsdlgfkjsdlkfdjilgsujilvjcl").length, 0);
+        
+        // RevisionDeleted content
+        Wiki.Revision[] contribs = enWiki.contribs("Allancake");
+        for (Wiki.Revision rev : contribs)
+        {
+            if (rev.getRevid() == 724989913L)
+            {
+                assertTrue("contribs: summary deleted", rev.isSummaryDeleted());
+                assertTrue("contribs: content deleted", rev.isContentDeleted());
+            }
+        }
     }
     
     @Test
     public void getPageText() throws Exception
     {
-        // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete
-        String text = testWiki.getPageText("User:MER-C/UnitTests/Delete");
-        assertEquals("getPageText", text, "This revision is not deleted!\n");
-        // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/pagetext
-        text = testWiki.getPageText("User:MER-C/UnitTests/pagetext");
-        assertEquals("page text: decoding", text, "&#039;&#039;italic&#039;&#039;" +
-            "\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;\n");
+        String[] text = testWiki.getPageText(new String[]
+        {
+            // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete
+            "User:MER-C/UnitTests/Delete", 
+            // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/pagetext
+            "User:MER-C/UnitTests/pagetext",
+            // non-existent -- https://test.wikipedia.org/wiki/Gsgdksgjdsg
+            "Gsgdksgjdsg"
+        });
+        // API result does not include the terminating new line
+        assertEquals("getPageText", text[0], "This revision is not deleted!");
+        assertEquals("page text: decoding", text[1], "&#039;&#039;italic&#039;&#039;" +
+            "\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;");
+        assertNull("getPageText: non-existent page", text[2]);
     }
     
     @Test
@@ -356,30 +487,31 @@ public class WikiUnitTest
     public void constructNamespaceString() throws Exception
     {
         StringBuilder temp = new StringBuilder();
-        enWiki.constructNamespaceString(temp, "blah", 1, 2, 3);
+        enWiki.constructNamespaceString(temp, "blah", new int[] { 3, 2, 1, 2 });
         assertEquals("constructNamespaceString", "&blahnamespace=1%7C2%7C3", temp.toString());
     }
     
     @Test
     public void constructTitleString() throws Exception
     {
-        String[] titles = new String[101];
+        String[] titles = new String[102];
         for (int i = 0; i < titles.length; i++)
             titles[i] = "a" + i;
+        titles[101] = "A34"; // should be removed
         String[] expected = new String[]
         {
             // slowmax == 50 for Wikimedia wikis if not logged in
-            URLEncoder.encode("A0|A1|A2|A3|A4|A5|A6|A7|A8|A9|A10|A11|A12|A13|A14|" +
-                "A15|A16|A17|A18|A19|A20|A21|A22|A23|A24|A25|A26|A27|A28|A29|A30|" +
-                "A31|A32|A33|A34|A35|A36|A37|A38|A39|A40|A41|A42|A43|A44|A45|A46|" +
-                "A47|A48|A49", "UTF-8"),
-            URLEncoder.encode("A50|A51|A52|A53|A54|A55|A56|A57|A58|A59|A60|A61|A62|" +
-                "A63|A64|A65|A66|A67|A68|A69|A70|A71|A72|A73|A74|A75|A76|A77|A78|A79|" +
-                "A80|A81|A82|A83|A84|A85|A86|A87|A88|A89|A90|A91|A92|A93|A94|A95|A96|" + 
-                "A97|A98|A99", "UTF-8"),
-            URLEncoder.encode("A100", "UTF-8")
+            URLEncoder.encode("A0|A1|A10|A100|A11|A12|A13|A14|A15|A16|A17|A18|" +
+                "A19|A2|A20|A21|A22|A23|A24|A25|A26|A27|A28|A29|A3|A30|A31|" +
+                "A32|A33|A34|A35|A36|A37|A38|A39|A4|A40|A41|A42|A43|A44|A45|" +
+                "A46|A47|A48|A49|A5|A50|A51|A52", "UTF-8"),
+            URLEncoder.encode("A53|A54|A55|A56|A57|A58|A59|A6|A60|A61|A62|A63|" + 
+                "A64|A65|A66|A67|A68|A69|A7|A70|A71|A72|A73|A74|A75|A76|A77|" +
+                "A78|A79|A8|A80|A81|A82|A83|A84|A85|A86|A87|A88|A89|A9|A90|" +
+                "A91|A92|A93|A94|A95|A96|A97|A98", "UTF-8"),
+            URLEncoder.encode("A99", "UTF-8")
         };
-        String[] actual = enWiki.constructTitleString(titles);
+        String[] actual = enWiki.constructTitleString(titles, false);
         assertArrayEquals("constructTitleString", expected, actual);
     }
     
@@ -391,7 +523,13 @@ public class WikiUnitTest
         // https://test.wikipedia.org/w/index.php?oldid=230472
         Wiki.Revision rev = testWiki.getRevision(230472);
         String text = rev.getText();
-        assertEquals("revision text: decoding", text, "&#039;&#039;italic&#039;&#039;" +
-            "\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;\n");
+        assertEquals("revision text: decoding", "&#039;&#039;italic&#039;&#039;" +
+            "\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;\n", text);
+        
+        // RevisionDeleted content (returns 404)
+        // https://en.wikipedia.org/w/index.php?title=Imran_Khan_%28singer%29&oldid=596714684
+        // rev = enWiki.getRevision(596714684L);
+        // text = rev.getText();
+        // assertEquals("revision text: content deleted", null, text);
     }
 }

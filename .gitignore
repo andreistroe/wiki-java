@@ -1,4 +1,3 @@
-
 # Created by https://www.gitignore.io/api/ja,java,eclipse,linux,windows,vim,intellij
 
 #!! ERROR: ja is undefined. Use list command to see defined gitignore types !!#
@@ -168,3 +167,64 @@ fabric.properties
 ### Intellij Patch ###
 *.iml
 
+||||||| merged common ancestors
+# Created by https://www.gitignore.io/api/maven,netbeans
+
+### Maven ###
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+
+### NetBeans ###
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+nbactions.xml
+.nb-gradle/
+=======
+# Created by https://www.gitignore.io/api/maven,netbeans
+
+### Maven ###
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+
+### NetBeans ###
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+nbactions.xml
+.nb-gradle/
+
+### Eclipse ###
+.project
+.classpath
+.settings
+
+### OS Generated files ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
