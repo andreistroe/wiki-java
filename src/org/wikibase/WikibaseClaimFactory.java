@@ -296,10 +296,14 @@ public class WikibaseClaimFactory {
                     if ("value".equalsIgnoreCase(valueNode.getNodeName())) {
                         Quantity qty = new Quantity();
                         qty.setAmount(Double.parseDouble(valueNode.getAttributes().getNamedItem("amount").getNodeValue()));
-                        qty.setUpperBound(
-                            Double.parseDouble(valueNode.getAttributes().getNamedItem("upperBound").getNodeValue()));
-                        qty.setLowerBound(
-                            Double.parseDouble(valueNode.getAttributes().getNamedItem("lowerBound").getNodeValue()));
+                        if (null != valueNode.getAttributes().getNamedItem("upperBound")) { 
+                            qty.setUpperBound(
+                                Double.parseDouble(valueNode.getAttributes().getNamedItem("upperBound").getNodeValue()));
+                        }
+                        if (null != valueNode.getAttributes().getNamedItem("lowerBound")) {
+                            qty.setLowerBound(
+                                Double.parseDouble(valueNode.getAttributes().getNamedItem("lowerBound").getNodeValue()));
+                        }
                         String unitUrl = valueNode.getAttributes().getNamedItem("unit").getNodeValue();
                         if (null != unitUrl && unitUrl.startsWith("http://www.wikidata.org/entity/")) {
                             String unitItem = unitUrl.substring("http://www.wikidata.org/entity/".length());
