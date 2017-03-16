@@ -1484,7 +1484,7 @@ public class Wiki implements Serializable
 
                 // reorder
                 for (int i = 0; i < pages.length; i++)
-                    if (normalize(pages[i]).equals(parsedtitle))
+                    if (normalize(pages[i]).equals(normalize(parsedtitle)))
                         info[i] = tempmap;
             }
         }
