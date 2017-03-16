@@ -1,6 +1,9 @@
 # Wiki.java
 
 [ ![Codeship Status for MER-C/wiki-java](https://codeship.com/projects/46dd6420-bb60-0132-1d73-5ea58638974e/status?branch=master)](https://codeship.com/projects/72144)
+[![Build Status](https://travis-ci.org/MER-C/wiki-java.svg?branch=master)](https://travis-ci.org/MER-C/wiki-java?branch=master)
+[![codecov.io](http://codecov.io/github/MER-C/wiki-java/coverage.svg?branch=master)](http://codecov.io/github/MER-C/wiki-java?branch=master)
+
 
 A Java wiki bot framework that is only one file -- [org/wikipedia/Wiki.java](src/org/wikipedia/Wiki.java).
 Some functionality provided by MediaWiki extensions deployed on Wikimedia sites
@@ -8,8 +11,8 @@ is available in [org/wikipedia/WMFWiki.java](src/org/wikipedia/WMFWiki.java).
 This project also contains the source code to the tools hosted at 
 https://wikipediatools.appspot.com and other Wikipedia-related bits and pieces. Requires JDK >= 1.8.
 
-Latest stable version: [0.31](https://github.com/MER-C/wiki-java/releases/tag/0.31) -- 
-MediaWiki versions 1.23+
+Latest stable version: [0.32](https://github.com/MER-C/wiki-java/releases/tag/0.32) -- 
+MediaWiki versions 1.28+
 
 ## Bug reports
 

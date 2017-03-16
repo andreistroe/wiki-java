@@ -18,6 +18,7 @@
  */
 
 import java.io.*;
+import java.net.*;
 import java.util.*;
 import java.util.logging.LogManager;
 import org.wikiutils.LoginUtils;
@@ -48,21 +49,17 @@ public class LoggedInTests
         // email
         //wiki.emailUser(wiki.getCurrentUser(), "Testing", "Blah", false);
 
-        // edit
-        wiki.edit("User:MER-C/BotSandbox", "Testing " + Math.random(), "test");
-        wiki.edit("User:MER-C/BotSandbox", "Testing " + Math.random(), "test");
-*/             
         // watch
         wiki.watch("Main Page", "Blah");
         wiki.unwatch("Main Page", "Blah");
-/*        
+  
         // watchlist
         for (Wiki.Revision item : wiki.watchlist(false))
             System.out.println(item);
         
         // upload
         wiki.upload(new File("~/Pictures/marsface.jpg"), "Wiki.java test4.jpg", "Test image. Source: [[:File:Face on Mars with Inset.jpg]]. ∑∑ƒ∂ß", "hello ∑∑ƒ∂ß");
-        
+     
         ///////////////////////
         // ADMIN STUFF
         ///////////////////////

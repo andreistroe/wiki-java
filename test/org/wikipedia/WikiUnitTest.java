@@ -21,7 +21,10 @@
 package org.wikipedia;
 
 import java.io.File;
+import java.math.BigInteger;
 import java.net.URLEncoder;
+import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.*;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -34,6 +37,7 @@ import static org.junit.Assert.*;
 public class WikiUnitTest
 {
     private static Wiki enWiki, deWiki, arWiki, testWiki, enWikt;
+    private static MessageDigest sha256;
     
     public WikiUnitTest()
     {
@@ -57,6 +61,8 @@ public class WikiUnitTest
         enWikt = new Wiki("en.wiktionary.org");
         enWikt.setMaxLag(-1);
         enWikt.getSiteInfo();
+        
+        sha256 = MessageDigest.getInstance("SHA-256");
     }
     
     @Test
@@ -85,10 +91,81 @@ public class WikiUnitTest
     }
     
     @Test
+    public void supportsSubpages() throws Exception
+    {
+        assertFalse("supportsSubpages: main", enWiki.supportsSubpages(Wiki.MAIN_NAMESPACE));
+        assertTrue("supportsSubpages: talk", enWiki.supportsSubpages(Wiki.TALK_NAMESPACE));
+        try
+        {
+            enWiki.supportsSubpages(-4444);
+            fail("supportsSubpages: obviously invalid namespace");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+    }
+    
+    @Test
+    public void getTalkPage() throws Exception
+    {
+        assertEquals("getTalkPage: main", "Talk:Hello", enWiki.getTalkPage("Hello"));
+        try
+        {
+            enWiki.getTalkPage("Talk:Hello");
+            fail("getTalkPage: tried to get talk page of a talk page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+        try
+        {
+            enWiki.getTalkPage("Special:Newpages");
+            fail("getTalkPage: tried to get talk page of a special page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+        try
+        {
+            enWiki.getTalkPage("Media:Wiki.png");
+            fail("getTalkPage: tried to get talk page of a media page");
+        }
+        catch (IllegalArgumentException ex)
+        {
+            // test passed
+        }
+    }
+    
+    @Test
+    public void getRootPage() throws Exception
+    {
+        assertEquals("getRootPage: main ns", "Aaa/Bbb/Ccc", enWiki.getRootPage("Aaa/Bbb/Ccc"));
+        assertEquals("getRootPage: talk ns", "Talk:Aaa", enWiki.getRootPage("Talk:Aaa/Bbb/Ccc"));
+        assertEquals("getRootPage: rtl", "ويكيبيديا:نقاش الحذف",
+            arWiki.getRootPage("ويكيبيديا:نقاش الحذف/كأس الخليج العربي لكرة القدم 2014 المجموعة ب"));
+    }
+    
+    @Test
+    public void getParentPage() throws Exception
+    {
+        assertEquals("getParentPage: main ns", "Aaa/Bbb/Ccc", enWiki.getParentPage("Aaa/Bbb/Ccc"));
+        assertEquals("getParentPage: talk ns", "Talk:Aaa/Bbb", enWiki.getParentPage("Talk:Aaa/Bbb/Ccc"));
+        assertEquals("getParentPage: rtl", "ويكيبيديا:نقاش الحذف",
+            arWiki.getParentPage("ويكيبيديا:نقاش الحذف/كأس الخليج العربي لكرة القدم 2014 المجموعة ب"));
+    }
+    
+    @Test
     public void userExists() throws Exception
     {
         assertTrue("I should exist!", enWiki.userExists("MER-C"));
         assertFalse("Anon should not exist", enWiki.userExists("127.0.0.1"));
+        boolean[] temp = testWiki.userExists(new String[] { "Jimbo Wales", "Djskgh;jgsd", "::/1" });
+        assertTrue("user exists: Jimbo", temp[0]);
+        assertFalse("user exists: nonsense", temp[1]);
+        assertFalse("user exists: IPv6 range", temp[2]);
     }
     
     @Test
@@ -160,8 +237,16 @@ public class WikiUnitTest
     public void getImage() throws Exception
     {
         File tempfile = File.createTempFile("wiki-java_getImage", null);
-        tempfile.deleteOnExit();
         assertFalse("getImage: non-existent file", enWiki.getImage("File:Sdkjf&sdlf.blah", tempfile));
+        
+        // non-thumbnailed Commons file
+        // https://commons.wikimedia.org/wiki/File:Portrait_of_Jupiter_from_Cassini.jpg
+        enWiki.getImage("File:Portrait of Jupiter from Cassini.jpg", tempfile);
+        byte[] imageData = Files.readAllBytes(tempfile.toPath());
+        byte[] hash = sha256.digest(imageData);
+        assertEquals("getImage", "fc63c250bfce3f3511ccd144ca99b451111920c100ac55aaf3381aec98582035",
+            String.format("%064x", new BigInteger(1, hash)));
+        tempfile.delete();
     }
     
     @Test
@@ -190,6 +275,7 @@ public class WikiUnitTest
         // https://en.wikipedia.org/wiki/Special:Blocklist/Nimimaan
         // see also getLogEntries() below
         Wiki.LogEntry[] le = enWiki.getIPBlockList("Nimimaan");
+        assertEquals("getIPBlockList: ID not available", -1, le[0].getLogID());
         assertEquals("getIPBlockList: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
         assertEquals("getIPBlockList: user", "MER-C", le[0].getUser().getUsername());
         assertEquals("getIPBlockList: log", Wiki.BLOCK_LOG, le[0].getType());
@@ -214,8 +300,9 @@ public class WikiUnitTest
         
         // Block log
         Calendar c = new GregorianCalendar(2016, Calendar.JUNE, 30);
-        Wiki.LogEntry[] le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "",
-            null, "User:Nimimaan", Wiki.ALL_NAMESPACES);
+        Wiki.LogEntry[] le = enWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "User:Nimimaan", c, 
+            null, 5, Wiki.ALL_NAMESPACES);
+        assertEquals("getLogEntries: ID", 75695806L, le[0].getLogID());
         assertEquals("getLogEntries: timestamp", "20160621131454", enWiki.calendarToTimestamp(le[0].getTimestamp()));
         assertEquals("getLogEntries/block: user", "MER-C", le[0].getUser().getUsername());
         assertEquals("getLogEntries/block: log", Wiki.BLOCK_LOG, le[0].getType());
@@ -238,8 +325,8 @@ public class WikiUnitTest
         // https://en.wikipedia.org/w/api.php?action=query&list=logevents&letitle=Talk:96th%20Test%20Wing/Temp&format=xmlfm
         
         // Move log
-        le = enWiki.getLogEntries(c, null, 5, Wiki.ALL_LOGS, "", null, 
-            "Talk:96th Test Wing/Temp", Wiki.ALL_NAMESPACES);
+        le = enWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "Talk:96th Test Wing/Temp",
+            c, null, 5, Wiki.ALL_NAMESPACES);
         assertEquals("getLogEntries/move: log", Wiki.MOVE_LOG, le[0].getType());
         assertEquals("getLogEntries/move: action", "move", le[0].getAction());
         // TODO: test for new title, redirect suppression
@@ -250,18 +337,17 @@ public class WikiUnitTest
         
         // RevisionDeleted log entries, no access
         // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&letitle=User%3AMER-C%2FTest
-        le = testWiki.getLogEntries("User:MER-C/Test");
+        le = testWiki.getLogEntries(Wiki.ALL_LOGS, null, null, "User:MER-C/Test");
         assertNull("getLogEntries: reason hidden", le[0].getReason());
         assertTrue("getLogEntries: reason hidden", le[0].isReasonDeleted());
         assertNull("getLogEntries: user hidden", le[0].getUser());
         assertTrue("getLogEntries: user hidden", le[0].isUserDeleted());
         // https://test.wikipedia.org/w/api.php?format=xmlfm&action=query&list=logevents&leuser=MER-C
         //     &lestart=20161002050030&leend=20161002050000&letype=delete
-        le = testWiki.getLogEntries(
+        le = testWiki.getLogEntries(Wiki.DELETION_LOG, null, "MER-C", null,
             testWiki.timestampToCalendar("20161002050030", false),
             testWiki.timestampToCalendar("20161002050000", false), 
-            Integer.MAX_VALUE, Wiki.DELETION_LOG, "", testWiki.getUser("MER-C"), 
-            "", Wiki.ALL_NAMESPACES);
+            Integer.MAX_VALUE, Wiki.ALL_NAMESPACES);
         assertNull("getLogEntries: action hidden", le[0].getTarget());
         assertTrue("getLogEntries: action hidden", le[0].isTargetDeleted());
     }
@@ -292,12 +378,15 @@ public class WikiUnitTest
     {
         assertNull("getFileMetadata: non-existent file", enWiki.getFileMetadata("File:Lweo&pafd.blah"));
         assertNull("getFileMetadata: commons image", enWiki.getFileMetadata("File:WikipediaSignpostIcon.svg"));
+        
+        // further tests blocked on MediaWiki API rewrite
+        // see https://phabricator.wikimedia.org/T89971
     }
     
     @Test
     public void getDuplicates() throws Exception
     {
-        assertArrayEquals("getDuplicates: non-existent file", new String[0], enWiki.getImageHistory("File:Sdfj&ghsld.jpg"));
+        assertArrayEquals("getDuplicates: non-existent file", new String[0], enWiki.getDuplicates("File:Sdfj&ghsld.jpg"));
     }
     
     @Test
@@ -330,11 +419,6 @@ public class WikiUnitTest
         {
             // the expected result. This is currently broken because fetch
             // intercepts the API error.
-        }
-        catch (Throwable ex)
-        {
-            ex.printStackTrace();
-            fail("getSectionText: should throw IllegalArgumentException");
         }
         */
     }
@@ -426,6 +510,10 @@ public class WikiUnitTest
         assertTrue("getRevision: user revdeled", rev.isUserDeleted());
         assertTrue("getRevision: summary revdeled", rev.isSummaryDeleted());
         assertTrue("getRevision: content revdeled", rev.isContentDeleted());
+        
+        // Revision has been deleted (not RevisionDeleted)
+        // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete
+        assertNull("getRevision: page deleted", testWiki.getRevision(217078L));
     }
     
     @Test
@@ -450,6 +538,45 @@ public class WikiUnitTest
                 assertTrue("contribs: content deleted", rev.isContentDeleted());
             }
         }
+    }
+    
+    @Test
+    public void getUser() throws Exception
+    {
+        assertNull("getUser: IPv4 address", testWiki.getUser("127.0.0.1"));
+        assertNull("getUser: IP address range", testWiki.getUser("127.0.0.0/24"));
+    }
+
+    @Test
+    public void getUserInfo() throws Exception
+    {
+        Map<String, Object>[] info = testWiki.getUserInfo(new String[]
+        {
+            "127.0.0.1", // IP address
+            "MER-C", 
+            "DKdsf;lksd" // should be non-existent...
+        });
+        assertNull("getUserInfo: IP address", info[0]);
+        assertNull("getUserInfo: non-existent user", info[2]);
+        
+        // editcount omitted because it is dynamic
+        assertFalse("getUserInfo: blocked", (Boolean)info[1].get("blocked"));
+        assertEquals("getUserInfo: gender", Wiki.Gender.unknown, (Wiki.Gender)info[1].get("gender"));
+        assertEquals("getUserInfo: registration", "20070214113837", 
+            testWiki.calendarToTimestamp((Calendar)info[1].get("created")));
+        assertTrue("getUserInfo: email", (Boolean)info[1].get("emailable"));
+        
+        // check groups
+        String[] temp = (String[])info[1].get("groups");
+        List<String> groups = Arrays.asList(temp);
+        temp = new String[] { "*", "autoconfirmed", "user", "sysop" };
+        assertTrue("getUserInfo: groups", groups.containsAll(Arrays.asList(temp)));
+        
+        // check (subset of) rights
+        temp = (String[])info[1].get("rights");
+        List<String> rights = Arrays.asList(temp);
+        temp = new String[] { "apihighlimits", "delete", "block", "editinterface", "writeapi" };
+        assertTrue("getUserInfo: groups", rights.containsAll(Arrays.asList(temp)));
     }
     
     @Test
@@ -511,17 +638,87 @@ public class WikiUnitTest
                 "A91|A92|A93|A94|A95|A96|A97|A98", "UTF-8"),
             URLEncoder.encode("A99", "UTF-8")
         };
-        String[] actual = enWiki.constructTitleString(titles, false);
+        String[] actual = enWiki.constructTitleString(0, titles, false);
         assertArrayEquals("constructTitleString", expected, actual);
     }
     
+    @Test
+    public void constructTitleStringUrlLimit() throws Exception
+    {
+        String[] titles = new String[]
+        {
+            "File:Булыжниковая мостовая на Автопарковом проезде в Мурманске.jpg", "File:漁火温泉 おと姫の湯.jpg",
+            "File:Лебеді на зимівлі в Чорноморському біосферному заповіднику.jpg",
+            "File:Второй корпус Мурманского гуманитарного института.jpg", "File:國立臺灣工藝研究發展中心Logo.jpg",
+            "File:Герои Российской Федерации. Стела в Сквере Воинов-интернационалистов.jpg",
+            "File:Марьяна Наумова и легендарный спортсмен, актер и экс-губернатор Арнольд Шварценеггер..jpg",
+            "File:東京表現高等学院MIICA校舎ナナメ.jpg",
+            "File:Выступление Д. Медведева на открытии нового здания Марийского государственного театра оперы и балета им. Э. Сапаева.jpg",
+            "File:Інструментарій для гіпнозу Клініки активної терапії особливих станів(м.Київ). Автор - Сергій БОЛТІВЕЦЬ.jpg",
+            "File:Дипломная работа С.В. Клиндухова по воссозданию дореволюционной ватной игрушки.jpg",
+            "File:Герб Общественной молодежной палаты Ярославской области.jpg",
+            "File:Вимірювання глибини гіпнотичного трансу каталепсією лівої руки. Автор - Сергій БОЛТІВЕЦЬ.jpg",
+            "File:Мурманский областной наркологический диспансер.jpg",
+            "File:Левостороннее движение в Мурманске. Высадка пассажиров троллейбуса на дорогу.jpg",
+            "File:Тест гіпнабельності з розплющеними очима за технікою каталепсії доктора Є.Гливи(Сідней, Австралія). Автор - Сергій БОЛТІВЕЦЬ.jpg",
+            "File:Новое здание Марийского государственного театра оперы и балета имени Эрика Сапаева.jpg",
+            "File:Мемориальная доска железнодорожникам мурманского узла.jpg",
+            "File:Закладной камень мемориала участникам союзнических конвоев.jpg",
+            "File:Мемориальная доска учреждению медали За оборону Советского Заполярья.jpg",
+            "File:国際航空宇宙展 ベル412EPI発展型 40%スケールモデル.jpg",
+            "File:Ганаев Камиль Гаджимурадович - Победитель ХVIII Московского международного салона изобретений и инновационных технологий.jpg",
+            "File:Доска на закладном камне Спасо-Преображенского морского кафедрального собора.jpg",
+            "File:Енцефалографічне відтворення початку плато(рівнини) перебігу гіпнотичного стану. Автор - Сергій БОЛТІВЕЦЬ.jpg",
+            "File:บริษัท โตโยต้าบ้านโพธิ์ - panoramio.jpg",
+            "File:Апаратурна індикація глибини гіпнотичного трансу в Клініці активної терапії особливих станів(м.Київ).jpg",
+            "File:Часовня в честь благоверных князей Александра Невского, Вячеслава Чешского и Владислава Сербского.jpg",
+            "File:基隆市政府 建築物公共安全檢查不合格場所 20161022.jpg", "File:呂學淵塗鴉作品，《犬》，2001。.JPG",
+            "File:Мемориальная доска в память о сотрудниках Мурманского управления гидрометеослужбы.jpg",
+            "File:新板特區與萬坪都會公園-1.jpg", "File:মুজিবনগর ১৪.jpg", "File:粟島浦村・内浦集落.jpg",
+            "File:大观楼-号称中国四大名楼之一，盛名之下其实难符！ - panoramio.jpg",
+            "File:Співробітник Сумського державного університету Роман Москаленко працює на атомному силовому мікроскопі.jpg",
+            "File:Лазеропунктурна регуляція психофізіологічних станів українським лазеропунктурним апаратом. Автор - Сергій БОЛТІВЕЦЬ.jpg",
+            "File:รปภ บริษัท โตโยต้าบ้านโพธิ์ - panoramio.jpg", "File:รถรางใต้ดิน สถานีเพชรบุรี - panoramio.jpg",
+            "File:প্রথম শহীদ মিনার 2.jpg", "File:西門徒步區廣告。武昌街二段與中華路一段交岔口。 - panoramio.jpg",
+            "File:കൊട്ടിയൂര്‍ പഠനശിബിരം2016.jpg.jpg", "File:ธงชาติไทยที่บริษัท โตโยต้า - panoramio.jpg",
+            "File:大間港旧フェリー埠頭.jpg", "File:รถไฟฟ้าใต้ดิน สถานีเพชรบุรี - panoramio.jpg", "File:প্রথম শহীদ মিনার .jpg",
+            "File:สถาบันเทคโนโลยีแห่งเอเชีย - panoramio.jpg",
+            "File:2016 맥스큐 머슬마니아 피트니스 세계대회 선발전 미즈비키니 1라운드 톨부문 (9).jpg",
+            "File:เจดีย์วัดเครือวัลย์วรวิหาร - panoramio.jpg", "File:東勢區林管處雙崎工作站.JPG",
+            "File:ถนนหน้าบริษัท โตโยต้าบ้านโพธิ์ - panoramio.jpg", "File:超音速輸送機 国際航空宇宙展.jpg",
+            "File:คลื่นในสปริง.gif", "File:姫新線平均通過人員（2015年度時点改訂版）.png", "File:शेरपुर शहीद स्मारक.jpg",
+            "File:水戸市植物公園熱帯果樹温室.jpg", "File:小型超音速旅客機 国際航空宇宙展.jpg", "File:香港中國婦女會丘佐榮学校内部.jpg",
+            "File:專訪《殺破狼2》張晉 如今帥哥才能演反派.jpg", "File:อัครจิต พนมวัน ณ อยุธยา.jpg", "File:沈阳市人民政府（浑南规划大厦3号楼）.jpg",
+            "File:水戸市植物公園における薬草園の瓦.jpg", "File:শিধলকুড়া উচ্চ বিদ্যালয়.jpeg",
+            "File:রংপুর বিভাগ, বাংলাদেশ এর ফেসবুক লেগো -২.png",
+            "File:आप सभी को मेरी और से न्यू ईयर की शुभकामनाएं.gif", "File:鶴橋駅 3・4番のりば 大阪環状線乗り換え階段 (駅ナンバリング導入前).jpg",
+            "File:水戸市植物公園観賞大温室カクタス室.jpg", "File:तहसील कार्यालय में रखा तिरंगा.jpg",
+            "File:রংপুর বিভাগ, বাংলাদেশ এর ফেসবুক লেগো.png", "File:রংপুর বিভাগ, বাংলাদেশ এর ফেসবুক প্রফাইল.png",
+            "File:หาติวเตอร์ เตรียมตัวเข้ามหาลัย ติวSAT ติว.jpg",
+            "File:இலங்கை தகவல் தொழில்நுட்ப நிறுவனம்(சின்னம்).png",
+            "File:முக்குறுணிப் பிள்ளையார் கோவில் கோபுரம்.jpg", "File:พระนางมณีจันทร์(เจ้าขรัวมณีจันทร์).jpg",
+            "File:இலங்கை தகவல் தொழில்நுட்ப நிறுவனத்தின் சின்னம்.png",
+            "File:กำลังหาครูสอนพิเศษ และหาติวเตอร์เพื่$.jpg",
+            "File:முக்குறுணிப் பிள்ளையார் கோவில் முகப்புத் தோற்றம்.jpg",
+            "File:முக்குறுணிப் பிள்ளையார் கோவில் உட்ப்புறத் தோற்றம்.jpg",
+            "File:พระบามสมเด็จพระเจ้าอยู่หัวเปิดศาลาเหรียญ.jpg",
+            "File:พระบาทสมเด็จพระเจ้าอยู่หัวเปิดศาลาเครื่องราช.jpg"
+        };
+        int lengthBaseUrl = (int)(Math.random() * 400);
+        String[] titleStrings = enWiki.constructTitleString(lengthBaseUrl, titles, false);
+        for (String ts : titleStrings)
+        {
+            assertTrue("constructTitleStringUrlLimit", ts.length() <= enWiki.URL_LENGTH_LIMIT - lengthBaseUrl);
+        }
+    }
+
     // INNER CLASS TESTS
     
     @Test
     public void revisionGetText() throws Exception
     {
         // https://test.wikipedia.org/w/index.php?oldid=230472
-        Wiki.Revision rev = testWiki.getRevision(230472);
+        Wiki.Revision rev = testWiki.getRevision(230472L);
         String text = rev.getText();
         assertEquals("revision text: decoding", "&#039;&#039;italic&#039;&#039;" +
             "\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;\n", text);

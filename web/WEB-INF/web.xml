@@ -1,32 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<web-app version="2.5" xmlns="http://java.sun.com/xml/ns/javaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd">
+<web-app version="2.5" xmlns="http://java.sun.com/xml/ns/javaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd">
     <description>Blah</description>
     <display-name>Some Wikipedia related tools</display-name>
     <servlet>
-        <servlet-name>Linksearch</servlet-name>
-        <servlet-class>org.wikipedia.servlets.XWikiLinksearch</servlet-class>
+        <servlet-name>Cross-wiki linksearch</servlet-name>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/xwikilinksearch.jsp</jsp-file>
+    </servlet>
+    <servlet>
+        <servlet-name>Mass linksearch</servlet-name>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/masslinksearch.jsp</jsp-file>
     </servlet>
     <servlet>
         <description>Image contribution surveyor</description>
         <servlet-name>ImageCCI</servlet-name>
-        <servlet-class>org.wikipedia.servlets.ImageCCI</servlet-class>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/imagecci.jsp</jsp-file>
     </servlet>
     <servlet>
         <servlet-name>SpamArchiveSearch</servlet-name>
-        <servlet-class>org.wikipedia.servlets.SpamArchiveSearch</servlet-class>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/spamarchivesearch.jsp</jsp-file>
     </servlet>
     <servlet>
         <servlet-name>PrefixContribs</servlet-name>
-        <servlet-class>org.wikipedia.servlets.PrefixContribs</servlet-class>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/prefixcontribs.jsp</jsp-file>
     </servlet>
     <servlet>
         <servlet-name>UserWatchlist</servlet-name>
-        <servlet-class>org.wikipedia.servlets.UserWatchlist</servlet-class>
+        <jsp-file>/WEB-INF/classes/org/wikipedia/servlets/userwatchlist.jsp</jsp-file>
     </servlet>
     
     <servlet-mapping>
-        <servlet-name>Linksearch</servlet-name>
+        <servlet-name>Cross-wiki linksearch</servlet-name>
         <url-pattern>/linksearch.jsp</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>Mass linksearch</servlet-name>
+        <url-pattern>/masslinksearch.jsp</url-pattern>
     </servlet-mapping>
     <servlet-mapping>
         <servlet-name>ImageCCI</servlet-name>

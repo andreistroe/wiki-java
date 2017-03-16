@@ -4,6 +4,7 @@ ol { margin: 15px }
 
 /* fix input sizes */
 input[type=text] { width: 300px }
+textarea { width: 500px }
 
 /* error messages */
 .error { color: red; size: 24pt }
@@ -13,4 +14,5 @@ ul.htmlrevisions { font-family: monospace; font-size: 120% }
 li.shaded { background-color: #eeeeee }
 span.sizeincreased { color: #009900 }
 span.sizedecreased { color: #990000 }
+span.history-deleted { color: #888888; text-decoration: line-through }
 a.pagename { color: #0066aa }
