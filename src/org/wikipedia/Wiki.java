@@ -929,38 +929,15 @@ public class Wiki implements Serializable
     // META STUFF
 
     /**
-     *  Logs in to the wiki. This method is thread-safe. You can set
-     *  ignoreRateLimit to false (default: true), if you don't want the API
-     *  to take care of throttling due to numerous failed login attempts.
+     *  Logs in to the wiki. This method is thread-safe. 
      *
      *  @param username a username
      *  @param password a password (as a char[] due to JPasswordField)
-     *  @param rateLimit makes this call "blocking", i.e. does obey rate limits
-     *  @throws FailedLoginException if the login failed due to incorrect
-     *  username and/or password and/or rate limits; Refer to the Exception's
-     *  message to get the reason
      *  @throws IOException if a network error occurs
      *  @see #logout
      */
-    public synchronized void login(String username, char[] password, boolean rateLimit) throws IOException, FailedLoginException
+    public synchronized void login(String username, char[] password) throws IOException, FailedLoginException
     {
-        if (rateLimit)
-        {
-            long sleepDuration = nextLoginTime - System.currentTimeMillis();
-            if (sleepDuration > 0)
-            {
-                // TODO log sleepDuration?
-                try
-                {
-                    Thread.sleep(sleepDuration);
-                }
-                catch (InterruptedException ignored)
-                {
-                }
-            }
-        }
-        // post login request
-        username = normalize(username);
         StringBuilder buffer = new StringBuilder(500);
         buffer.append("lgname=");
         buffer.append(encode(username, false));
@@ -974,7 +951,7 @@ public class Wiki implements Serializable
         // check for success
         if (line.contains("result=\"Success\""))
         {
-            user = new User(username);
+            user = new User(parseAttribute(line, "lgusername", 0));
             boolean apihighlimit = user.isAllowedTo("apihighlimits");
             if (apihighlimit)
             {
@@ -983,74 +960,26 @@ public class Wiki implements Serializable
             }
             log(Level.INFO, "login", "Successfully logged in as " + username + ", highLimit = " + apihighlimit);
         }
+        else if (line.contains("result=\"Failed\""))
+            throw new FailedLoginException("Login failed: " + parseAttribute(line, "reason", 0));
+        // interactive login or bot password required
+        else if (line.contains("result=\"Aborted\"")) 
+            throw new FailedLoginException("Login failed: you need to use a bot password, see [[Special:Botpasswords]].");
         else
-        {
-            log(Level.WARNING, "login", "Failed to log in as " + username);
-            // test for some common failure reasons
-            if (line.contains("WrongPass") || line.contains("WrongPluginPass"))
-                throw new FailedLoginException("Login failed: incorrect password.");
-            else if (line.contains("NotExists"))
-                throw new FailedLoginException("Login failed: user does not exist.");
-            else if (line.contains("Throttled"))
-            {
-                int wait = new Integer(parseAttribute(line, "wait", 0));
-                nextLoginTime = System.currentTimeMillis() + 1000 * wait;
-                throw new FailedLoginException("Login failed: throttled (wait: "
-                    + wait + ")");
-            }
-            throw new FailedLoginException("Login failed: unknown reason.");
-        }
+            throw new AssertionError("Unreachable!");
     }
 
     /**
-     *  Logs in to the wiki. This method is thread-safe. You can set
-     *  ignoreRateLimit to false (default: true), if you don't want the API
-     *  to take care of throttling due to numerous failed login attempts.
+     *  Logs in to the wiki. This method is thread-safe. 
      *
      *  @param username a username
      *  @param password a string with the password
-     *  @param rateLimit makes this call "blocking", i.e. does obey rate limits
-     *  @throws FailedLoginException if the login failed due to incorrect
-     *  username and/or password and/or rate limits; Refer to the Exception's
-     *  message to get the reason
-     *  @throws IOException if a network error occurs
-     *  @see #logout
-     */
-    public synchronized void login(String username, String password, boolean rateLimit) throws IOException, FailedLoginException
-    {
-        login(username, password.toCharArray(), rateLimit);
-    }
-
-    /**
-     *  Logs in to the wiki. This method is thread-safe.
-     *
-     *  @param username a username
-     *  @param password a string with the password
-     *  @throws FailedLoginException if the login failed due to incorrect
-     *  username and/or password and/or rate limits; Refer to the Exception's
-     *  message to get the reason
      *  @throws IOException if a network error occurs
      *  @see #logout
      */
     public synchronized void login(String username, String password) throws IOException, FailedLoginException
     {
-        login(username, password.toCharArray(), true);
-    }
-
-    /**
-     *  Logs in to the wiki. This method is thread-safe.
-     *
-     *  @param username a username
-     *  @param password a password
-     *  @throws FailedLoginException if the login failed due to incorrect
-     *  username and/or password and/or rate limits; Refer to the Exception's
-     *  message to get the reason
-     *  @throws IOException if a network error occurs
-     *  @see #logout
-     */
-    public synchronized void login(String username, char[] password) throws IOException, FailedLoginException
-    {
-        login(username, password, true);
+        login(username, password.toCharArray());
     }
 
     /**
@@ -1343,7 +1272,7 @@ public class Wiki implements Serializable
      */
     public String getRootPage(String page) throws IOException
     {
-        if (supportsSubpages(namespace(page)))
+        if (supportsSubpages(namespace(page)) && page.contains("/"))
             return page.substring(0, page.indexOf("/"));
         else
             return page;
@@ -1363,7 +1292,7 @@ public class Wiki implements Serializable
      */
     public String getParentPage(String page) throws IOException
     {
-        if (supportsSubpages(namespace(page)))
+        if (supportsSubpages(namespace(page)) && page.contains("/"))
             return page.substring(0, page.lastIndexOf("/"));
         else
             return page;
@@ -3094,8 +3023,6 @@ public class Wiki implements Serializable
         temp.delete(temp.length() - 3, temp.length());
         out.append("&expiry=");
         out.append(temp);
-        System.out.println(out); // TODO remove
-
         String response = post(apiUrl + "action=protect", out.toString(), "protect");
 
         // done
@@ -3324,27 +3251,31 @@ public class Wiki implements Serializable
         out.append("&token=");
         out.append(encode(getToken("csrf"), false));
         if (user.isAllowedTo("suppressrevision") && suppress != null)
-        {
-            if (suppress)
-                out.append("&suppress=yes");
-            else
-                out.append("&suppress=no");
-        }
+            out.append(suppress ? "&suppress=yes" : "&suppress=no");
         // this is really stupid... I'm open to suggestions
         out.append("&hide=");
         StringBuilder temp = new StringBuilder("&show=");
-        if (hidecontent == Boolean.TRUE)
-            out.append("content%7C");
-        else if (hidecontent == Boolean.FALSE)
-            temp.append("content%7C");
-        if (hideuser == Boolean.TRUE)
-            out.append("user%7C");
-        else if (hideuser == Boolean.FALSE)
-            temp.append("user%7C");
-        if (hidereason == Boolean.TRUE)
-            out.append("comment");
-        else if (hidereason == Boolean.FALSE)
-            temp.append("comment");
+        if (hidecontent != null)
+        {
+            if (hidecontent)
+                out.append("content%7C");
+            else
+                temp.append("content%7C");
+        }
+        if (hideuser != null)
+        {
+            if (hideuser)
+                out.append("user%7C");
+            else
+                temp.append("user%7C");
+        }
+        if (hidereason != null)
+        {
+            if (hidereason)
+                out.append("comment");
+            else
+                temp.append("comment");
+        }
         if (out.lastIndexOf("%7C") == out.length() - 2)
             out.delete(out.length() - 2, out.length());
         if (temp.lastIndexOf("%7C") == temp.length() - 2)
@@ -4159,7 +4090,7 @@ public class Wiki implements Serializable
      */
     public String[] allUsers(String start, int number) throws IOException
     {
-        return allUsers(start, number, "", "", "", "");
+        return allUsers(start, number, "", "", "", "", false, false);
     }
 
     /**
@@ -4171,7 +4102,7 @@ public class Wiki implements Serializable
      */
     public String[] allUsersInGroup(String group) throws IOException
     {
-        return allUsers("", -1, "", group, "", "");
+        return allUsers("", -1, "", group, "", "", false, false);
     }
      
     /**
@@ -4183,7 +4114,7 @@ public class Wiki implements Serializable
      */
     public String[] allUsersNotInGroup(String excludegroup) throws IOException
     {
-        return allUsers("", -1, "", "", excludegroup, "");
+        return allUsers("", -1, "", "", excludegroup, "", false, false);
     }
     
     /**
@@ -4195,7 +4126,7 @@ public class Wiki implements Serializable
      */
     public String[] allUsersWithRight(String rights) throws IOException
     {
-        return allUsers("", -1, "", "", "", rights);
+        return allUsers("", -1, "", "", "", rights, false, false);
     }
     
     /**
@@ -4207,7 +4138,7 @@ public class Wiki implements Serializable
      */
     public String[] allUsersWithPrefix(String prefix) throws IOException
     {
-        return allUsers("", -1, prefix, "", "", "");
+        return allUsers("", -1, prefix, "", "", "", false, false);
     }
     
     /**
@@ -4216,16 +4147,22 @@ public class Wiki implements Serializable
      *
      *  @param start the string to start enumeration
      *  @param number the number of users to return
-     *  @param prefix list all users with this prefix (overrides start and amount),
-     *  use "" to not not specify one
-     *  @param group list all users in this group(s). Use pipe-char "|" to separate group names.
-     *  @param excludegroup list all users who are not in this group(s). Use pipe-char "|" to separate group names.
-     *  @param rights list all users with this right(s). Use pipe-char "|" to separate right names.
+     *  @param prefix list all users with this prefix (overrides start and 
+     *  amount), use "" to not not specify one
+     *  @param group list all users in this group(s). Use pipe-char "|" to 
+     *  separate group names.
+     *  @param excludegroup list all users who are not in this group(s). Use 
+     *  pipe-char "|" to separate group names.
+     *  @param rights list all users with this right(s). Use pipe-char "|" to 
+     *  separate right names.
+     *  @param activeonly return only users who have edited in the last 30 days
+     *  @param skipzero return only users with edits
      *  @return a String[] containing the usernames
      *  @throws IOException if a network error occurs
      *  @since 0.28
      */
-    public String[] allUsers(String start, int number, String prefix, String group, String excludegroup, String rights) throws IOException
+    public String[] allUsers(String start, int number, String prefix, String group, 
+        String excludegroup, String rights, boolean activeonly, boolean skipzero) throws IOException
     {
         // sanitise
         StringBuilder url = new StringBuilder(query);
@@ -4257,6 +4194,10 @@ public class Wiki implements Serializable
             url.append("&aurights=");
             url.append(encode(rights, false));
         }
+        if (activeonly)
+            url.append("&auactiveusers=1");
+        if (skipzero)
+            url.append("&auwitheditsonly=1");
         List<String> members = new ArrayList<>(6667); // enough for most requests
         do
         {
@@ -4321,8 +4262,8 @@ public class Wiki implements Serializable
      *  Gets information about the given users. For each username, this returns
      *  either null if the user doesn't exist, or:
      *  <ul>
-     *  <li><b>editcount</b>: (int) {@link User#countEdits()} the user's edit
-     *    count
+     *  <li><b>editcount</b>: (int) the user's edit count (see {@link 
+     *    User#countEdits()})
      *  <li><b>groups</b>: (String[]) the groups the user is in (see
      *    [[Special:Listgrouprights]])
      *  <li><b>rights</b>: (String[]) the stuff the user can do
@@ -6406,10 +6347,10 @@ public class Wiki implements Serializable
         private long logid = -1;
         private String type;
         private String action;
-        private String reason;
+        private final String reason;
         private User user;
         private String target;
-        private Calendar timestamp;
+        private final Calendar timestamp;
         private Object details;
         private boolean reasonDeleted = false, userDeleted = false, 
             targetDeleted = false;
