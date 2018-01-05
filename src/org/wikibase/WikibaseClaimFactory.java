@@ -155,7 +155,7 @@ public class WikibaseClaimFactory {
                 }
                 datavalueNode = datavalueNode.getNextSibling();
             }
-        } else if ("string".equalsIgnoreCase(datatype)) {
+        } else if ("string".equalsIgnoreCase(datatype) || "external-id".equals(datatype)) {
             Node datavalueNode = snakNode.getFirstChild();
             while (null != datavalueNode) {
                 if ("datavalue".equalsIgnoreCase(datavalueNode.getNodeName())) {
