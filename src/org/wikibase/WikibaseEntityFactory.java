@@ -96,6 +96,10 @@ public class WikibaseEntityFactory {
 
             // parse entity attrs
             NamedNodeMap entityAttrs = entityNode.getAttributes();
+            Node missingAttr = entityAttrs.getNamedItem("missing");
+            if (null != missingAttr && null != missingAttr.getNodeValue()) {
+                return null;
+            }
             String itemId = entityAttrs.getNamedItem("title").getNodeValue();
             Matcher idMatcher = ENTITY_ID_PATTERN.matcher(itemId);
             if (!idMatcher.matches()) {
