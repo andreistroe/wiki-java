@@ -120,10 +120,12 @@ public class WikibaseClaimFactory {
 
     private static Snak parseSnakFromNode(Node snakNode) throws WikibaseException {
         String datatype = snakNode.getAttributes().getNamedItem("datatype").getNodeValue();
+        String snaktype = snakNode.getAttributes().getNamedItem("snaktype").getNodeValue();
         Property prop = new Property(snakNode.getAttributes().getNamedItem("property").getNodeValue());
         Snak snak = new Snak();
         snak.setProperty(prop);
         snak.setDatatype(datatype);
+        snak.setSnaktype(snaktype);
         if ("wikibase-item".equalsIgnoreCase(datatype)) {
             Node datavalueNode = snakNode.getFirstChild();
             while (null != datavalueNode) {

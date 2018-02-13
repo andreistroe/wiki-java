@@ -20,6 +20,7 @@ public class Snak {
     private WikibaseData data;
     private Property property;
     private String datatype;
+    private String snaktype;
 
     public Snak(WikibaseData data, Property prop) {
         super();
@@ -53,6 +54,14 @@ public class Snak {
 
     public void setProperty(Property prop) {
         this.property = prop;
+    }
+
+    public String getSnaktype() {
+        return snaktype;
+    }
+
+    public void setSnaktype(String snaktype) {
+        this.snaktype = snaktype;
     }
 
     public String toJSON() {

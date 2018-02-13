@@ -18,11 +18,14 @@ package org.wikibase.data;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * This class represents the Wikibase entity (item) with the list of labels, descriptions, claims, sitelinks.
@@ -94,6 +97,24 @@ public class Entity {
 
     public boolean isLoaded() {
         return loaded;
+    }
+    
+    public Set<Claim> getClaims(Property prop) {
+        if (null == claims || !claims.containsKey(prop)) {
+            return null;
+        }
+        return claims.get(prop);
+    }
+    
+    public Set<Claim> getBestClaims(Property prop) {
+        if (null == claims || !claims.containsKey(prop)) {
+            return null;
+        }
+        Set<Claim> propClaims = claims.get(prop);
+        
+        Map<Rank, List<Claim>> claimsByRank = propClaims.stream().collect(Collectors.groupingBy(Claim::getRank));
+        Optional<Rank> maxRank = claimsByRank.keySet().stream().max(Comparator.naturalOrder());
+        return claimsByRank.get(maxRank.get()).stream().collect(Collectors.toSet());
     }
 
     @Override
