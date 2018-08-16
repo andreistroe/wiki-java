@@ -20,21 +20,77 @@
 
 package org.wikipedia;
 
-import java.io.*;
-import java.net.*;
-import java.nio.*;
-import java.nio.file.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.HttpRetryException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLEncoder;
+import java.net.UnknownHostException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.text.Normalizer;
-import java.time.*;
-import java.time.format.*;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.*;
-import java.util.logging.*;
-import java.util.stream.*;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.StringJoiner;
+import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
 
-import javax.security.auth.login.*;
+import javax.security.auth.login.AccountLockedException;
+import javax.security.auth.login.CredentialException;
+import javax.security.auth.login.CredentialExpiredException;
+import javax.security.auth.login.FailedLoginException;
+import javax.security.auth.login.LoginException;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpression;
+import javax.xml.xpath.XPathFactory;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.wikipedia.Wiki.RequestHelper;
 
 /**
  *  This is a somewhat sketchy bot framework for editing MediaWiki wikis.
@@ -8563,5 +8619,58 @@ public class Wiki implements Comparable<Wiki>
     protected void logurl(String url, String method)
     {
         logger.logp(Level.INFO, "Wiki", method, "Fetching URL {0}", url);
+    }
+    
+    public List<Map> getLintErrors(int ns, String lntCategory) throws IOException {
+        HashMap<String, String> getParams = new HashMap<>();
+        getParams.put("list", "linterrors");
+        getParams.put("lntcategories", URLEncoder.encode(lntCategory, StandardCharsets.UTF_8.name()));
+        getParams.put("lntlimit", "100");
+        getParams.put("lntnamespace", String.valueOf(ns));
+        String line = makeApiCall(getParams, new HashMap<>(), "getLintErrors");
+        List ret = new ArrayList<>();
+
+        DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
+        try {
+            DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
+            Document document = builder.parse(new ByteArrayInputStream(line.getBytes()));
+            XPathFactory xpathFactory = XPathFactory.newInstance();
+            XPath xPath = xpathFactory.newXPath();
+            XPathExpression apiExpression = xPath.compile("/api[1]/query[1]/linterrors[1]");
+            Node linterrorsNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
+            if (null == linterrorsNode) {
+                return ret;
+            }
+            NodeList linterrorsList = linterrorsNode.getChildNodes();
+            int lintIdx = 0;
+            while (lintIdx < linterrorsList.getLength()) {
+                Map eachLintMap = new HashMap();
+                Node eachLintitem = linterrorsList.item(lintIdx);
+
+                eachLintMap.put("page", eachLintitem.getAttributes().getNamedItem("title").getNodeValue());
+                NodeList lintItemChildren = eachLintitem.getChildNodes();
+                for (int liIdx = 0; liIdx < lintItemChildren.getLength(); liIdx++) {
+                    Node crtChild = lintItemChildren.item(liIdx);
+                    if ("templateInfo".equals(crtChild.getNodeName())) {
+                        NamedNodeMap templateInfoAttrs = crtChild.getAttributes();
+                        if (null != templateInfoAttrs && null != templateInfoAttrs.getNamedItem("name")) {
+                            eachLintMap.put("template", templateInfoAttrs.getNamedItem("name").getNodeValue());
+                        }
+                    } else if ("params".equals(crtChild.getNodeName())) {
+                        NamedNodeMap paramInfoAttrs = crtChild.getAttributes();
+                        if (null != paramInfoAttrs && null != paramInfoAttrs.getNamedItem("name")) {
+                            eachLintMap.put("param", paramInfoAttrs.getNamedItem("name").getNodeValue());
+                        }
+                    }
+                }
+                ret.add(eachLintMap);
+                lintIdx++;
+            }
+
+        } catch (Exception e) {
+            log(Level.WARNING, "getLintErrors", e.getMessage());
+            return null;
+        }
+        return ret;
     }
 }
