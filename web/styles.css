@@ -4,10 +4,19 @@ ol { margin: 15px }
 
 /* fix input sizes */
 input[type=text] { width: 300px }
-textarea { width: 500px }
+textarea { width: 700px }
 
 /* error messages */
-.error { color: red; size: 24pt }
+.error { color: red; font-size: 24pt }
+
+/* collapsibles */
+.collapsecontainer { border: 1px solid crimson }
+.collapseboxtop { display: block; background: #ffdddd; width: 100% }
+.collapseheader { font-weight: 600 }
+.showhidespan { text-align: right }
+.collapsed { display: none }
+.tocollapse { display: block }
+.notcollapsed { display: block }
 
 /* Styles for ParserUtils.revisionsToHTML() */
 ul.htmlrevisions { font-family: monospace; font-size: 120% }

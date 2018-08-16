@@ -3,7 +3,7 @@ package org.wikiutils;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Scanner;
-import org.wikipedia.Wiki;
+import org.wikipedia.ArrayUtils;
 
 /**
  * Contains some useful String related methods.
@@ -11,7 +11,6 @@ import org.wikipedia.Wiki;
  * @author Fastily
  * 
  * @see org.wikiutils.CollectionUtils
- * @see org.wikiutils.DateUtils
  * @see org.wikiutils.GUIUtils
  * @see org.wikiutils.IOUtils
  * @see org.wikiutils.LoginUtils
@@ -41,22 +40,6 @@ public class StringUtils
 	public static boolean containsIgnoreCase(String text, String s2)
 	{
 		return text.toUpperCase().contains(s2.toUpperCase());
-	}
-	
-	
-	/**
-	 * Determines if two arrays of Strings share at least one element.
-	 * 
-	 * @param a1 The first array
-	 * @param a2 The second array
-	 * 
-	 * @return True if the arrays share at least one element
-	 * 
-	 */
-
-	public static boolean arraysShareElement(String[] a1, String[] a2)
-	{
-		return Wiki.intersection(a1, a2).length > 0;
 	}
 	
 	/**

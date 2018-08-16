@@ -1,6 +1,6 @@
 /**
  *  @(#)LoggedInTests.java
- *  Copyright (C) 2011 - 2014 MER-C
+ *  Copyright (C) 2011 - 2018 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -32,9 +32,8 @@ public class LoggedInTests
 {
     public static void main(String[] args) throws Exception
     {
-
         // login
-        Wiki wiki = new Wiki("test.wikipedia.org");
+        Wiki wiki = Wiki.createInstance("test.wikipedia.org");
         LoginUtils.guiLogin(wiki);
         wiki.setThrottle(5);
   /*   
@@ -56,9 +55,6 @@ public class LoggedInTests
         // watchlist
         for (Wiki.Revision item : wiki.watchlist(false))
             System.out.println(item);
-        
-        // upload
-        wiki.upload(new File("~/Pictures/marsface.jpg"), "Wiki.java test4.jpg", "Test image. Source: [[:File:Face on Mars with Inset.jpg]]. ∑∑ƒ∂ß", "hello ∑∑ƒ∂ß");
      
         ///////////////////////
         // ADMIN STUFF
@@ -77,25 +73,13 @@ public class LoggedInTests
 
         // TODO: move the following to testwiki
         
-//        Wiki enWiki = new Wiki("en.wikipedia.org");
+//        Wiki enWiki = Wiki.createInstance("en.wikipedia.org");
 //        LoginUtils.guiLogin(enWiki);
 //        enWiki.setThrottle(5);
         
         // deleted contributions
         // for (Wiki.Revision rev : enWiki.deletedContribs("Namkeenvilla"))
         //    System.out.println(rev);
-        
-        // revdeled information
-        // Calendar start = new GregorianCalendar(2014, 1, 22);
-        // Calendar end = new GregorianCalendar(2014, 1, 24);
-        // for (Wiki.Revision rev : enWiki.getPageHistory("Imran Khan (singer)", start, end, false))
-        //     System.out.println(rev);
-        
-        // revdelete
-        // Wiki.Revision rev = enWiki.getRevision(600296466L);
-        // enWiki.revisionDelete(Boolean.TRUE, null, Boolean.TRUE, "Testing", Boolean.TRUE, new Wiki.Revision[] { rev });
-        // enWiki.revisionDelete(Boolean.FALSE, null, null, "Testing", Boolean.FALSE, new Wiki.Revision[] { rev });
-        // enWiki.revisionDelete(null, null, Boolean.FALSE, "Testing", Boolean.FALSE, new Wiki.Revision[] { rev });
 */        
     }
 }

@@ -10,7 +10,6 @@ import org.wikipedia.Wiki;
  * @author Fastily
  * 
  * @see org.wikiutils.CollectionUtils
- * @see org.wikiutils.DateUtils
  * @see org.wikiutils.GUIUtils
  * @see org.wikiutils.IOUtils
  * @see org.wikiutils.LoginUtils
@@ -61,8 +60,9 @@ public class WikiUtils
 	 * @param wiki The wiki object to use.
 	 * 
 	 * @return An array containing the elements we were unable to delete.
+         * @deprecated use {@link org.wikipedia.Pages#massDelete(List, String, String)}
 	 */
-
+        @Deprecated
 	public static String[] arrayNuke(String[] list, String reason, String talkReason, Wiki wiki)
 	{
 		ArrayList<String> f = new ArrayList<String>();
@@ -153,7 +153,7 @@ public class WikiUtils
 	{
 		try
 		{
-			return wiki.getCategoryMembers(ParseUtils.namespaceStrip(cat, wiki)).length == 0;
+			return wiki.getCategoryMembers(wiki.removeNamespace(cat)).length == 0;
 		}
 		catch (Throwable e)
 		{

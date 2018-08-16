@@ -9,10 +9,27 @@ A Java wiki bot framework that is only one file -- [org/wikipedia/Wiki.java](src
 Some functionality provided by MediaWiki extensions deployed on Wikimedia sites
 is available in [org/wikipedia/WMFWiki.java](src/org/wikipedia/WMFWiki.java). 
 This project also contains the source code to the tools hosted at 
-https://wikipediatools.appspot.com and other Wikipedia-related bits and pieces. Requires JDK >= 1.8.
+https://wikipediatools.appspot.com and other Wikipedia-related bits and pieces. 
+Requires JDK >= 1.8. For those using Java 9, only the java.base and java.logging
+modules are required.
 
-Latest stable version: [0.32](https://github.com/MER-C/wiki-java/releases/tag/0.32) -- 
-MediaWiki versions 1.28+
+Latest stable version: [0.35](https://github.com/MER-C/wiki-java/releases/tag/0.35) -- 
+MediaWiki versions 1.31+
+
+## Dependencies
+
+| Class/Package            | Java          | MediaWiki extensions |
+| ------------------------ |-------------- | -------------------- |
+| org.wikipedia.Wiki       | None          | None                 |
+| org.wikipedia.WMFWiki    | None          | As indicated. Works on WMF sites. |
+| org.wikipedia.*Utils     | None          | None                 |
+| org.wikipedia.tools.*    | None          | See below.           |
+| org.wikipedia.servlets.* | javax.servlet | See below.           |
+
+Note: Some tools and servlets are hardcoded to work on WMF sites only, and in
+some cases for just the English Wikipedia. (Some tools solve en.wp specific
+problems). They should all work on WMF sites. If you would like tool coverage 
+for your wiki, please file a bug report.
 
 ## Bug reports
 

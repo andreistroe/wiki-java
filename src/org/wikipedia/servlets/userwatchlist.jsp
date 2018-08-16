@@ -2,23 +2,13 @@
     @(#)userwatchlist.jsp 0.01 24/01/2017
     Copyright (C) 2015 - 2017 MER-C
   
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-  
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    This is free software: you are free to change and redistribute it under the 
+    Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
+    for details. There is NO WARRANTY, to the extent permitted by law.
 -->
 
 <%@ include file="header.jsp" %>
-<%@ page contentType="text/html" pageEncoding="UTF-8" 
-    trimDirectiveWhitespaces="true"%>
+<%@ page contentType="text/html" pageEncoding="UTF-8" trimDirectiveWhitespaces="true"%>
 
 <%
     request.setAttribute("toolname", "User watchlist");
@@ -35,6 +25,9 @@
     String temp = request.getParameter("skip");
     int skip = (temp == null) ? 0 : Integer.parseInt(temp);
     skip = Math.max(skip, 0);
+
+    Wiki enWiki = Wiki.createInstance("en.wikipedia.org");
+    enWiki.setMaxLag(-1);
 %>
 
 <!doctype html>
@@ -68,14 +61,14 @@ Someone # Spam
         if (inputpage != null)
         {
         %>
-        <a href="//en.wikipedia.org/wiki/<%= inputpage_url %>">visit</a> |
-        <a href="//en.wikipedia.org/w/index.php?action=edit&title=<%= inputpage_url %>">edit</a>
+        <a href="<%= enWiki.getPageURL(inputpage) %>">visit</a> |
+        <a href="<%= enWiki.getIndexPHPURL() + "?action=edit&title=" + inputpage_url %>">edit</a>
         <%
         }
         %>
         
 <tr><td>Skip:
-    <td><input type=text size=30 name=skip value="<%= skip %>">
+    <td><input type=number size=30 name=skip value="<%= skip %>">
 </table>
 <input type=submit value="Submit">
 </form>
@@ -100,8 +93,6 @@ Someone # Spam
         <%
         return;
     }
-    Wiki enWiki = new Wiki("en.wikipedia.org");
-    enWiki.setMaxLag(-1);
     String us = inputpage.substring(5, inputpage.indexOf('/'));
     Wiki.User us2 = enWiki.getUser(us);
     if (us2 == null || !us2.isA("sysop"))
@@ -170,29 +161,21 @@ Someone # Spam
     {
         String user = entry.getKey();
         String reason = ServletUtils.sanitizeForHTML(entry.getValue());
-        String userenc = ServletUtils.sanitizeForURL(user);
-
         // user links
         %>
 <h3><%= user %></h3>
 <p>
 <ul>
-    <li><a href="//en.wikipedia.org/wiki/User:<%= userenc %>"><%= user %></a> | 
-        <a href="//en.wikipedia.org/wiki/User_talk:<%= userenc %>">talk</a> | 
-        <a href="//en.wikipedia.org/wiki/Special:Contributions/<%= userenc %>">contribs</a> | 
-        <a href="//en.wikipedia.org/wiki/Special:DeletedContributions/<%= userenc %>">deleted contribs</a> | 
-        <a href="//en.wikipedia.org/wiki/Special:Block/<%= userenc %>">block</a> | 
-        <a href="//en.wikipedia.org/w/index.php?title=Special:Log&type=block&page=User:<%= userenc %>">block log</a>
-
+    <li>
         <%
+        out.println(ParserUtils.generateUserLinks(enWiki, user));
         if (!reason.isEmpty())
             out.println("<li><i>" + reason + "</i>");
         out.println("</ul>");
 
         // fetch and output contribs
-        Calendar cutoff = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
-        cutoff.add(Calendar.DAY_OF_MONTH, -5);
-        Wiki.Revision[] contribs = enWiki.contribs(user, "", cutoff, null);
+        OffsetDateTime cutoff = OffsetDateTime.now(ZoneOffset.UTC).minusDays(5);
+        Wiki.Revision[] contribs = enWiki.contribs(user, cutoff, null);
         if (contribs.length == 0)
             out.println("<p>No recent contributions or user does not exist.");
         else

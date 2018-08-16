@@ -2,33 +2,24 @@
     @(#)xwikilinksearch.jsp 0.02 27/01/2017
     Copyright (C) 2011 - 2017 MER-C
   
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-  
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    This is free software: you are free to change and redistribute it under the 
+    Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
+    for details. There is NO WARRANTY, to the extent permitted by law.
 -->
 
 <%@ include file="header.jsp" %>
-<%@ page contentType="text/html" pageEncoding="UTF-8" 
-    trimDirectiveWhitespaces="true"%>
+<%@ page contentType="text/html" pageEncoding="UTF-8" trimDirectiveWhitespaces="true"%>
 
 <%
     request.setAttribute("toolname", "Cross-wiki linksearch");
 
-    String domain = request.getParameter("link");
-    if (domain != null)
-        domain = ServletUtils.sanitizeForAttribute(domain);
-    else
-        domain = "";
+    String mode = request.getParameter("mode");
+    if (mode == null)
+        mode = "multi";
 
+    String domain = request.getParameter("link");
+    domain = (domain == null) ? "" : ServletUtils.sanitizeForAttribute(domain);
+    
     String set = request.getParameter("set");
     if (set == null)
         set = "top20";
@@ -57,25 +48,26 @@
 <p>
 This tool searches various Wikimedia projects for a specific link. Enter a 
 domain name (example.com, not *.example.com or http://example.com) below. A 
-timeout is more likely when searching for more wikis or protocols.
+timeout is more likely when searching for more wikis or protocols. For performance
+reasons, results are limited to between 500 and 1000 links per wiki.
 
 <form name="spamform" action="./linksearch.jsp" method=GET>
 <table>
 <tr>
-    <td><input id="radio_multi" type=radio name=radio<%= (wikiinput == null) ?
+    <td><input id="radio_multi" type=radio name=mode value=multi<%= mode.equals("multi") ?
          " checked" : "" %>>
     <td>Wikis to search:
-    <td><select name=set id=set<%= (wikiinput != null) ? " disabled" : "" %>>
-            <option value="top20"<%= set == "top20" ? " selected" : ""%>>Top 20 Wikipedias</option>
-            <option value="top40"<%= set == "top40" ? " selected" : ""%>>Top 40 Wikipedias</option>
-            <option value="major"<%= set == "major" ? " selected" : ""%>>Major Wikimedia projects</option>
+    <td><select name=set id=set<%= mode.equals("multi") ? "" : " disabled" %>>
+            <option value="top20"<%= set.equals("top20") ? " selected" : ""%>>Top 20 Wikipedias</option>
+            <option value="top40"<%= set.equals("top40") ? " selected" : ""%>>Top 40 Wikipedias</option>
+            <option value="major"<%= set.equals("major") ? " selected" : ""%>>Major Wikimedia projects</option>
         </select>
         
 <tr>
-    <td><input id="radio_single" type=radio name=radio<%= (wikiinput != null) ?
+    <td><input id="radio_single" type=radio name=mode value=single<%= mode.equals("single") ?
          " checked" : "" %>>
     <td>Single wiki:
-    <td><input type=text id=wiki name=wiki <%= (wikiinput != null) ? "value=" + 
+    <td><input type=text id=wiki name=wiki <%= mode.equals("single") ? "required value=" + 
         wikiinput : "disabled" %>>
         
 <tr>
@@ -90,7 +82,7 @@ timeout is more likely when searching for more wikis or protocols.
 
 <tr>
     <td><input type=checkbox name=ns value=0<%= mainns ? " checked" : "" %>>
-    <td colspan=3>Main namespace only?
+    <td colspan=3>Main namespace only? (May be unreliable.)
 
 </table>
 <br>
@@ -98,44 +90,59 @@ timeout is more likely when searching for more wikis or protocols.
 </form>
 
 <%
-    if (!domain.isEmpty())
+    // state with no input parameters
+    if (domain.isEmpty())
     {
-        out.println("<hr>");
-        Map<Wiki, List[]> results = null;
-        if (wikiinput == null)
+%>
+<%@ include file="footer.jsp" %>
+<%
+        return;
+    }
+    out.println("<hr>");
+    Map<Wiki, List<String[]>> results = null;
+    if (mode.equals("multi"))
+    {
+        switch (set)
         {
-            switch (set)
-            {
-                case "top20":
-                    results = AllWikiLinksearch.crossWikiLinksearch(domain, 
-                        AllWikiLinksearch.TOP20, https, mailto, ns);
-                    break;
-                case "top40":
-                    results = AllWikiLinksearch.crossWikiLinksearch(domain, 
-                        AllWikiLinksearch.TOP40, https, mailto, ns);
-                    break;
-                case "major":
-                    results = AllWikiLinksearch.crossWikiLinksearch(domain, 
-                        AllWikiLinksearch.MAJOR_WIKIS, https, mailto, ns);
-                    break;
-                default:
+            case "top20":
+                results = AllWikiLinksearch.crossWikiLinksearch(true, 1, 
+                    domain, AllWikiLinksearch.TOP20, https, mailto, ns);
+                break;
+            case "top40":
+                results = AllWikiLinksearch.crossWikiLinksearch(true, 1, 
+                    domain, AllWikiLinksearch.TOP40, https, mailto, ns);
+                break;
+            case "major":
+                results = AllWikiLinksearch.crossWikiLinksearch(true, 1, 
+                    domain, AllWikiLinksearch.MAJOR_WIKIS, https, mailto, ns);
+                break;
+            default:
     %>
     <span class="error">Invalid wiki set selected!</span>
     <%@ include file="footer.jsp" %>
     <%
-                    return;
-            }
+                return;
         }
-        else   
-            results = AllWikiLinksearch.crossWikiLinksearch(domain, new Wiki[] 
-                { new Wiki(wikiinput) }, https, mailto, ns);
+    }
+    else if (mode.equals("single"))
+        results = AllWikiLinksearch.crossWikiLinksearch(true, 1, domain, 
+            Arrays.asList(Wiki.createInstance(wikiinput)), https, mailto, ns);
 
-        for (Map.Entry<Wiki, List[]> entry : results.entrySet())
-        {
-            Wiki wiki = entry.getKey();
-            out.println("<h3>" + wiki.getDomain() + "</h3>");
-            out.println(ParserUtils.linksearchResultsToHTML(entry.getValue(), wiki, domain));
-        }
+    for (Map.Entry<Wiki, List<String[]>> entry : results.entrySet())
+    {
+        Wiki wiki = entry.getKey();
+        List<String[]> value = entry.getValue();
+        out.println("<h3>" + wiki.getDomain() + "</h3>");
+        out.println(ExternalLinks.of(wiki).linksearchResultsToHTML(value, domain));
+        out.println("<p>");
+        if (value.size() > 500)
+            out.print("At least ");
+        out.print(value.size());
+        out.print(" links found ");
+        out.print("(<a href=\"" + wiki.getPageURL("Special:Linksearch/*." + domain)
+            + "\">HTTP linksearch</a> | ");
+        out.println("<a href=\"" + wiki.getPageURL("Special:Linksearch/https://*." + domain)
+            + "\">HTTPS linksearch</a>).");
     }
 %>
 <%@ include file="footer.jsp" %>

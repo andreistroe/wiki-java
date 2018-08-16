@@ -12,7 +12,6 @@ import org.wikipedia.Wiki;
  * @author Fastily
  * 
  * @see org.wikiutils.CollectionUtils
- * @see org.wikiutils.DateUtils
  * @see org.wikiutils.GUIUtils
  * @see org.wikiutils.IOUtils
  * @see org.wikiutils.LoginUtils
@@ -127,8 +126,9 @@ public class ParseUtils
 	 * @param wiki the home wiki
 	 * @return The String without a namespace identifier.
          * @throws IOException if a network error occurs (rare)
-	 * 
+	 * @deprecated replace with {@link org.wikipedia.Wiki#removeNamespace(java.lang.String)}
 	 */
+        @Deprecated
 	public static String namespaceStrip(String title, Wiki wiki) throws IOException
 	{
 		String ns = wiki.namespaceIdentifier(wiki.namespace(title));
@@ -723,7 +723,9 @@ public class ParseUtils
          *  @param internalLink
          *  @return 
          *  Contributed by Hunsu.
+         *  @deprecated see org.wikipedia.ParserUtils.parseWikilink
          */
+        @Deprecated
         public static String getInternalLinkTitle(String internalLink)
         {
                 if(internalLink == null)
