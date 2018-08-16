@@ -26,4 +26,12 @@ public class WikibaseException extends Exception {
         super(arg0);
     }
 
+    public WikibaseException() {
+        super();
+    }
+
+    public WikibaseException(String arg0, Throwable arg1) {
+        super(arg0, arg1);
+    }
+
 }
