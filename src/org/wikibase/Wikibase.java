@@ -16,8 +16,17 @@
 */
 package org.wikibase;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,16 +52,20 @@ import org.wikibase.data.Snak;
 import org.wikibase.data.WikibaseData;
 import org.wikipedia.Wiki;
 
-public class Wikibase extends Wiki
-{
+public class Wikibase extends Wiki {
+    private String queryServiceUrl = "https://query.wikidata.org/sparql";
 
-    public Wikibase(String url)
-    {
-        super(url, "/w", "https://");
+    public Wikibase(String url, String queryServiceUrl) {
+        this(url);
+        this.queryServiceUrl = queryServiceUrl;
     }
 
-    public Wikibase()
-    {
+    public Wikibase(String url) {
+        super(url, "/w", "https://");
+        initVars();
+    }
+
+    public Wikibase() {
         this("www.wikidata.org");
     }
 
@@ -65,8 +78,8 @@ public class Wikibase extends Wiki
      * @throws IOException
      * @throws WikibaseException
      */
-    public Entity getWikibaseItemBySiteAndTitle(final String site, final String pageName) throws IOException, WikibaseException
-    {
+    public Entity getWikibaseItemBySiteAndTitle(final String site, final String pageName)
+        throws IOException, WikibaseException {
 
         HashMap<String, String> getParams = new HashMap<>();
         HashMap<String, Object> postParams = new HashMap<>();
@@ -89,8 +102,7 @@ public class Wikibase extends Wiki
      * @throws IOException
      * @throws WikibaseException
      */
-    public Entity getWikibaseItemById(final Entity item) throws IOException, WikibaseException
-    {
+    public Entity getWikibaseItemById(final Entity item) throws IOException, WikibaseException {
         return getWikibaseItemById(item.getId());
     }
 
@@ -102,19 +114,14 @@ public class Wikibase extends Wiki
      * @throws IOException
      * @throws WikibaseException
      */
-    public Entity getWikibaseItemById(final String id) throws IOException, WikibaseException
-    {
+    public Entity getWikibaseItemById(final String id) throws IOException, WikibaseException {
         if (null == id || 0 == id.trim().length())
             return null;
         StringBuilder actualId = new StringBuilder(id.trim());
-        if ('q' != Character.toLowerCase(actualId.charAt(0)))
-        {
-            if (Pattern.matches("\\d+", actualId))
-            {
+        if ('q' != Character.toLowerCase(actualId.charAt(0))) {
+            if (Pattern.matches("\\d+", actualId)) {
                 actualId.insert(0, 'Q');
-            }
-            else
-            {
+            } else {
                 throw new WikibaseException(id + " is not a valid Wikibase id");
             }
         }
@@ -138,8 +145,8 @@ public class Wikibase extends Wiki
      * @throws WikibaseException
      * @throws IOException
      */
-    public String getTitleInLanguage(final String site, final String pageName, final String language) throws WikibaseException, IOException
-    {
+    public String getTitleInLanguage(final String site, final String pageName, final String language)
+        throws WikibaseException, IOException {
         Entity ent = getWikibaseItemBySiteAndTitle(site, pageName);
         return ent.getSitelinks().get(language).getPageName();
     }
@@ -153,8 +160,8 @@ public class Wikibase extends Wiki
      * @param totitle
      * @throws IOException
      */
-    public void linkPages(final String fromsite, final String fromtitle, final String tosite, final String totitle) throws IOException
-    {
+    public void linkPages(final String fromsite, final String fromtitle, final String tosite, final String totitle)
+        throws IOException {
         Map<String, String> getParams1 = new HashMap<>();
         Map<String, Object> postParams1 = new HashMap<>();
         getParams1.put("action", "wbgetentities");
@@ -168,22 +175,18 @@ public class Wikibase extends Wiki
         final String entityTag = text.substring(startindex, endindex);
         final StringTokenizer entityTok = new StringTokenizer(entityTag, " ", false);
         String q = null;
-        while (entityTok.hasMoreTokens())
-        {
+        while (entityTok.hasMoreTokens()) {
             final String entityAttr = entityTok.nextToken();
-            if (!entityAttr.contains("="))
-            {
+            if (!entityAttr.contains("=")) {
                 continue;
             }
             final String[] entityParts = entityAttr.split("\\=");
-            if (entityParts[0].trim().startsWith("title"))
-            {
+            if (entityParts[0].trim().startsWith("title")) {
                 q = entityParts[1].trim().replace("\"", "");
             }
         }
 
-        if (null == q)
-        {
+        if (null == q) {
             return;
         }
 
@@ -200,16 +203,13 @@ public class Wikibase extends Wiki
 
         String edittoken = null;
         final StringTokenizer pageTok = new StringTokenizer(pageTag, " ", false);
-        while (pageTok.hasMoreTokens())
-        {
+        while (pageTok.hasMoreTokens()) {
             final String pageAttr = pageTok.nextToken();
-            if (!pageAttr.contains("="))
-            {
+            if (!pageAttr.contains("=")) {
                 continue;
             }
             final String[] entityParts = pageAttr.split("=");
-            if (entityParts[0].trim().startsWith("edittoken"))
-            {
+            if (entityParts[0].trim().startsWith("edittoken")) {
                 edittoken = entityParts[1].trim().replace("\"", "");
             }
         }
@@ -228,8 +228,7 @@ public class Wikibase extends Wiki
         res = makeApiCall(getParams, postParams, "linkPages");
     }
 
-    public String createItem(Entity createdEntity) throws IOException, WikibaseException
-    {
+    public String createItem(Entity createdEntity) throws IOException, WikibaseException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -246,40 +245,34 @@ public class Wikibase extends Wiki
         String ret = null;
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
-        try
-        {
+        try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
             Document document = builder.parse(new ByteArrayInputStream(text1.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
             Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
-            if (null == apiNode || null == apiNode.getAttributes() || null == apiNode.getAttributes().getNamedItem("success"))
-            {
+            if (null == apiNode || null == apiNode.getAttributes()
+                || null == apiNode.getAttributes().getNamedItem("success")) {
                 throw new WikibaseException("API root node with success parameter not found in text.");
             }
-            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue()))
-            {
+            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue())) {
                 XPathExpression entityExpression = xPath.compile("/api[1]/entity[1]");
                 Node entityNode = (Node) entityExpression.evaluate(document, XPathConstants.NODE);
-                if (null == entityNode || null == entityNode.getAttributes() || null == entityNode.getAttributes().getNamedItem("id"))
-                {
+                if (null == entityNode || null == entityNode.getAttributes()
+                    || null == entityNode.getAttributes().getNamedItem("id")) {
                     throw new WikibaseException("Entity node not present or without id attribute");
                 }
                 ret = entityNode.getAttributes().getNamedItem("id").getNodeValue();
-            }
-            else
-            {
+            } else {
                 XPathExpression errorExpression = xPath.compile("/api[1]/error[1]");
                 Node errorNode = (Node) errorExpression.evaluate(document, XPathConstants.NODE);
-                if (null != errorNode && null != errorNode.getAttributes() && null != errorNode.getAttributes().getNamedItem("info"))
-                {
+                if (null != errorNode && null != errorNode.getAttributes()
+                    && null != errorNode.getAttributes().getNamedItem("info")) {
                     throw new WikibaseException(errorNode.getAttributes().getNamedItem("info").getNodeValue());
                 }
             }
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             log(Level.WARNING, "createItem", e.getMessage());
             return null;
         }
@@ -295,8 +288,7 @@ public class Wikibase extends Wiki
      * @throws WikibaseException
      * @throws IOException
      */
-    public String addClaim(String entityId, Claim claim) throws WikibaseException, IOException
-    {
+    public String addClaim(String entityId, Claim claim) throws WikibaseException, IOException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -313,40 +305,34 @@ public class Wikibase extends Wiki
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         String ret = null;
-        try
-        {
+        try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
             Document document = builder.parse(new ByteArrayInputStream(text1.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
             Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
-            if (null == apiNode || null == apiNode.getAttributes() || null == apiNode.getAttributes().getNamedItem("success"))
-            {
+            if (null == apiNode || null == apiNode.getAttributes()
+                || null == apiNode.getAttributes().getNamedItem("success")) {
                 throw new WikibaseException("API root node with success parameter not found in text.");
             }
-            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue()))
-            {
+            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue())) {
                 XPathExpression claimExpression = xPath.compile("/api[1]/claim[1]");
                 Node claimNode = (Node) claimExpression.evaluate(document, XPathConstants.NODE);
-                if (null == claimNode || null == claimNode.getAttributes() || null == claimNode.getAttributes().getNamedItem("id"))
-                {
+                if (null == claimNode || null == claimNode.getAttributes()
+                    || null == claimNode.getAttributes().getNamedItem("id")) {
                     throw new WikibaseException("Claim node not present or without id attribute");
                 }
                 ret = claimNode.getAttributes().getNamedItem("id").getNodeValue();
-            }
-            else
-            {
+            } else {
                 XPathExpression errorExpression = xPath.compile("/api[1]/error[1]");
                 Node errorNode = (Node) errorExpression.evaluate(document, XPathConstants.NODE);
-                if (null != errorNode && null != errorNode.getAttributes() && null != errorNode.getAttributes().getNamedItem("info"))
-                {
+                if (null != errorNode && null != errorNode.getAttributes()
+                    && null != errorNode.getAttributes().getNamedItem("info")) {
                     throw new WikibaseException(errorNode.getAttributes().getNamedItem("info").getNodeValue());
                 }
             }
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             log(Level.WARNING, "addClaim", e.getMessage());
             return null;
         }
@@ -362,8 +348,7 @@ public class Wikibase extends Wiki
      * @throws WikibaseException
      * @throws IOException
      */
-    public String editClaim(Claim claim) throws WikibaseException, IOException
-    {
+    public String editClaim(Claim claim) throws WikibaseException, IOException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -377,40 +362,34 @@ public class Wikibase extends Wiki
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         String ret = null;
-        try
-        {
+        try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
             Document document = builder.parse(new ByteArrayInputStream(text1.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
             Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
-            if (null == apiNode || null == apiNode.getAttributes() || null == apiNode.getAttributes().getNamedItem("success"))
-            {
+            if (null == apiNode || null == apiNode.getAttributes()
+                || null == apiNode.getAttributes().getNamedItem("success")) {
                 throw new WikibaseException("API root node with success parameter not found in text.");
             }
-            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue()))
-            {
+            if ("1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue())) {
                 XPathExpression claimExpression = xPath.compile("/api[1]/claim[1]");
                 Node claimNode = (Node) claimExpression.evaluate(document, XPathConstants.NODE);
-                if (null == claimNode || null == claimNode.getAttributes() || null == claimNode.getAttributes().getNamedItem("id"))
-                {
+                if (null == claimNode || null == claimNode.getAttributes()
+                    || null == claimNode.getAttributes().getNamedItem("id")) {
                     throw new WikibaseException("Claim node not present or without id attribute");
                 }
                 ret = claimNode.getAttributes().getNamedItem("id").getNodeValue();
-            }
-            else
-            {
+            } else {
                 XPathExpression errorExpression = xPath.compile("/api[1]/error[1]");
                 Node errorNode = (Node) errorExpression.evaluate(document, XPathConstants.NODE);
-                if (null != errorNode && null != errorNode.getAttributes() && null != errorNode.getAttributes().getNamedItem("info"))
-                {
+                if (null != errorNode && null != errorNode.getAttributes()
+                    && null != errorNode.getAttributes().getNamedItem("info")) {
                     throw new WikibaseException(errorNode.getAttributes().getNamedItem("info").getNodeValue());
                 }
             }
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             log(Level.WARNING, "editClaim", e.getMessage());
             return null;
         }
@@ -425,8 +404,7 @@ public class Wikibase extends Wiki
      * @throws WikibaseException
      * @throws IOException
      */
-    public String removeClaim(String claimId) throws WikibaseException, IOException
-    {
+    public String removeClaim(String claimId) throws WikibaseException, IOException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -439,38 +417,34 @@ public class Wikibase extends Wiki
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         String ret = null;
-        try
-        {
+        try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
             Document document = builder.parse(new ByteArrayInputStream(text1.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
             Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
-            if (null == apiNode || null == apiNode.getAttributes() || null == apiNode.getAttributes().getNamedItem("success"))
-            {
+            if (null == apiNode || null == apiNode.getAttributes()
+                || null == apiNode.getAttributes().getNamedItem("success")) {
                 throw new WikibaseException("API root node with success parameter not found in text.");
             }
-            if (!"1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue()))
-            {
+            if (!"1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue())) {
                 XPathExpression errorExpression = xPath.compile("/api[1]/error[1]");
                 Node errorNode = (Node) errorExpression.evaluate(document, XPathConstants.NODE);
-                if (null != errorNode && null != errorNode.getAttributes() && null != errorNode.getAttributes().getNamedItem("info"))
-                {
+                if (null != errorNode && null != errorNode.getAttributes()
+                    && null != errorNode.getAttributes().getNamedItem("info")) {
                     throw new WikibaseException(errorNode.getAttributes().getNamedItem("info").getNodeValue());
                 }
             }
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             log(Level.WARNING, "removeClaim", e.getMessage());
             return null;
         }
         return ret;
     }
 
-    public String addQualifier(String claimGUID, String propertyId, WikibaseData qualifier) throws WikibaseException, IOException
-    {
+    public String addQualifier(String claimGUID, String propertyId, WikibaseData qualifier)
+        throws WikibaseException, IOException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -487,8 +461,7 @@ public class Wikibase extends Wiki
         return null;
     }
 
-    public String addReference(String claimGUID, List<Snak> ref) throws IOException, WikibaseException
-    {
+    public String addReference(String claimGUID, List<Snak> ref) throws IOException, WikibaseException {
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -498,30 +471,24 @@ public class Wikibase extends Wiki
         StringBuilder snakBuilder = new StringBuilder("{");
         boolean refStarted = false;
         Map<Property, List<Snak>> referenceMap = new HashMap<Property, List<Snak>>();
-        for (Snak eachSnak : ref)
-        {
+        for (Snak eachSnak : ref) {
             List<Snak> claimList = referenceMap.get(eachSnak.getProperty());
-            if (null == claimList)
-            {
+            if (null == claimList) {
                 claimList = new ArrayList<Snak>();
             }
             claimList.add(eachSnak);
             referenceMap.put(eachSnak.getProperty(), claimList);
         }
 
-        for (Entry<Property, List<Snak>> eachRefEntry : referenceMap.entrySet())
-        {
-            if (refStarted)
-            {
+        for (Entry<Property, List<Snak>> eachRefEntry : referenceMap.entrySet()) {
+            if (refStarted) {
                 snakBuilder.append(',');
             }
             snakBuilder.append('\"').append(eachRefEntry.getKey().getId()).append("\":");
             snakBuilder.append('[');
             boolean entryStarted = false;
-            for (Snak eachSnak : eachRefEntry.getValue())
-            {
-                if (entryStarted)
-                {
+            for (Snak eachSnak : eachRefEntry.getValue()) {
+                if (entryStarted) {
                     snakBuilder.append(',');
                 }
                 snakBuilder.append(eachSnak.toJSON());
@@ -541,8 +508,7 @@ public class Wikibase extends Wiki
         return null;
     }
 
-    public void setLabel(String qid, String language, String label) throws IOException, WikibaseException
-    {
+    public void setLabel(String qid, String language, String label) throws IOException, WikibaseException {
         String token = obtainToken();
         Map<String, String> getParams = new HashMap<>();
         getParams.put("action", "wbsetlabel");
@@ -553,13 +519,12 @@ public class Wikibase extends Wiki
         postParams.put("value", label);
         postParams.put("token", token);
         postParams.put("format", "xml");
-        
+
         String text1 = makeApiCall(getParams, postParams, "setLabel");
         log(Level.INFO, "setLabel", text1);
     }
 
-    public void setDescription(String qid, String language, String description) throws IOException, WikibaseException
-    {
+    public void setDescription(String qid, String language, String description) throws IOException, WikibaseException {
         String token = obtainToken();
         Map<String, String> getParams = new HashMap<>();
         getParams.put("action", "wbsetdescription");
@@ -574,8 +539,7 @@ public class Wikibase extends Wiki
         log(Level.INFO, "setDescription", text1);
     }
 
-    private String obtainToken() throws IOException, WikibaseException
-    {
+    private String obtainToken() throws IOException, WikibaseException {
         Map<String, String> getParams = new HashMap<>();
         getParams.put("action", "query");
         getParams.put("meta", "tokens");
@@ -584,30 +548,106 @@ public class Wikibase extends Wiki
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         Node tokenNode;
-        try
-        {
+        try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
             Document document = builder.parse(new ByteArrayInputStream(text.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
             Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
-            if (null == apiNode)
-            {
+            if (null == apiNode) {
                 throw new WikibaseException("API root node not found in text.");
             }
             XPathExpression tokenExpression = xPath.compile("/api[1]/query[1]/tokens[1]");
             tokenNode = (Node) tokenExpression.evaluate(document, XPathConstants.NODE);
-        }
-        catch (Exception e)
-        {
+        } catch (Exception e) {
             throw new WikibaseException(e);
         }
-        if (null == tokenNode || tokenNode.getAttributes() == null || tokenNode.getAttributes().getNamedItem("csrftoken") == null)
-        {
+        if (null == tokenNode || tokenNode.getAttributes() == null
+            || tokenNode.getAttributes().getNamedItem("csrftoken") == null) {
             throw new WikibaseException("Token node not found");
         }
 
         return tokenNode.getAttributes().getNamedItem("csrftoken").getNodeValue();
     }
+
+    public List<Map<String, Object>> query(String queryString) throws IOException, WikibaseException {
+        URL queryService = new URL(queryServiceUrl);
+        HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
+        queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
+
+        Map<String, String> parameters = new HashMap<>();
+        parameters.put("format", "xml");
+        parameters.put("query", queryString);
+
+        queryServiceConnection.setRequestMethod("GET");
+        queryServiceConnection.setDoInput(true);
+        try (DataOutputStream out = new DataOutputStream(queryServiceConnection.getOutputStream())) {
+            out.writeBytes(buildParameterString(parameters));
+            out.flush();
+        }
+
+        int status = queryServiceConnection.getResponseCode();
+        if (status > 299) {
+            StringBuilder content = new StringBuilder();
+            try (
+                BufferedReader reader = new BufferedReader(new InputStreamReader(queryServiceConnection.getErrorStream()))) {
+                String inLine = null;
+                while (null != (inLine = reader.readLine())) {
+                    content.append(inLine);
+                }
+            }
+            throw new WikibaseException(content.toString());
+        } else {
+            DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
+            List<Map<String, Object>> resultList = new ArrayList<>();
+            try {
+                DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
+                Document document = builder.parse(queryServiceConnection.getInputStream());
+                XPathFactory xpathFactory = XPathFactory.newInstance();
+                XPath xPath = xpathFactory.newXPath();
+                XPathExpression resultsExpr = xPath.compile("/sparql[1]/results[1]");
+                Node resultsNode = (Node) resultsExpr.evaluate(document, XPathConstants.NODE);
+                
+                Node eachResult = resultsNode.getFirstChild();
+                while(null != eachResult) {
+                    if ("result".equals(eachResult.getNodeName())) {
+                        Map<String, Object> result = new HashMap<String, Object>();
+                        Node eachBinding = eachResult.getFirstChild();
+                        while(null != eachBinding) {
+                            if ("binding".equals(eachBinding.getNodeName())) {
+                                String name = eachBinding.getAttributes().getNamedItem("name").getNodeValue();
+                                String value = eachBinding.getFirstChild().getTextContent();
+                                result.put(name, value);
+                            }
+                            eachBinding = eachBinding.getNextSibling();
+                        }
+                        if (!result.isEmpty()) {
+                            resultList.add(result);
+                        }
+                    }
+                    eachResult = eachResult.getNextSibling();
+                }
+                return resultList;
+            } catch (Exception e) {
+                throw new WikibaseException(String.format("Error running query %s", queryString), e);
+            }
+        }
+
+    }
+
+    private String buildParameterString(Map<String, String> parameters) throws UnsupportedEncodingException {
+        StringBuilder result = new StringBuilder();
+
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            result.append(URLEncoder.encode(entry.getKey(), "UTF-8"));
+            result.append("=");
+            result.append(URLEncoder.encode(entry.getValue(), "UTF-8"));
+            result.append("&");
+        }
+
+        String resultString = result.toString();
+        return resultString.length() > 0 ? resultString.substring(0, resultString.length() - 1) : resultString;
+    }
+
 }
