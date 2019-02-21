@@ -47,6 +47,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.wikibase.data.Claim;
 import org.wikibase.data.Entity;
+import org.wikibase.data.Item;
 import org.wikibase.data.Property;
 import org.wikibase.data.Snak;
 import org.wikibase.data.WikibaseData;
@@ -608,17 +609,24 @@ public class Wikibase extends Wiki {
                 XPath xPath = xpathFactory.newXPath();
                 XPathExpression resultsExpr = xPath.compile("/sparql[1]/results[1]");
                 Node resultsNode = (Node) resultsExpr.evaluate(document, XPathConstants.NODE);
-                
+
                 Node eachResult = resultsNode.getFirstChild();
-                while(null != eachResult) {
+                while (null != eachResult) {
                     if ("result".equals(eachResult.getNodeName())) {
                         Map<String, Object> result = new HashMap<String, Object>();
                         Node eachBinding = eachResult.getFirstChild();
-                        while(null != eachBinding) {
+                        while (null != eachBinding) {
                             if ("binding".equals(eachBinding.getNodeName())) {
                                 String name = eachBinding.getAttributes().getNamedItem("name").getNodeValue();
-                                String value = eachBinding.getFirstChild().getTextContent();
-                                result.put(name, value);
+                                Node childNode = eachBinding.getFirstChild();
+                                String value = childNode.getTextContent();
+                                if ("uri".equalsIgnoreCase(childNode.getNodeName())
+                                    && value.startsWith("http://www.wikidata.org/entity/")) {
+                                    String qId = value.substring("http://www.wikidata.org/entity/".length());
+                                    result.put(name, new Item(new Entity(qId)));
+                                } else {
+                                    result.put(name, value);
+                                }
                             }
                             eachBinding = eachBinding.getNextSibling();
                         }
