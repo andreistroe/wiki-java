@@ -27,6 +27,18 @@ public class StringData extends WikibaseData {
         this.value = value;
     }
 
+    @Override
+    public String getDatatype()
+    {
+        return "string";
+    }
+
+    @Override
+    public String valueToJSON()
+    {
+        return String.format("\"%s\"", value);
+    }
+
     public StringData(String value) {
         super();
         this.value = value;
@@ -35,15 +47,5 @@ public class StringData extends WikibaseData {
     @Override
     public String toString() {
         return "StringData [value=" + value + "]";
-    }
-
-    @Override
-    public String toJSON() {
-        StringBuilder sbuild = new StringBuilder("{");
-        sbuild.append("\"value\":\"").append(value).append("\"");
-        sbuild.append(',');
-        sbuild.append("\"type\":\"string\"");
-        sbuild.append('}');
-        return sbuild.toString();
     }
 }
