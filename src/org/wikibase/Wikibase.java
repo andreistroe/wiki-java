@@ -45,6 +45,7 @@ import javax.xml.xpath.XPathFactory;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.wikibase.data.Claim;
 import org.wikibase.data.Entity;
 import org.wikibase.data.Item;
@@ -575,6 +576,7 @@ public class Wikibase extends Wiki {
     public List<Map<String, Object>> query(String queryString) throws IOException, WikibaseException {
         URL queryService = new URL(queryServiceUrl);
         HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
+        queryServiceConnection.setDoOutput(true);
         queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
 
         Map<String, String> parameters = new HashMap<>();
@@ -582,7 +584,6 @@ public class Wikibase extends Wiki {
         parameters.put("query", queryString);
 
         queryServiceConnection.setRequestMethod("GET");
-        queryServiceConnection.setDoInput(true);
         try (DataOutputStream out = new DataOutputStream(queryServiceConnection.getOutputStream())) {
             out.writeBytes(buildParameterString(parameters));
             out.flush();
@@ -595,46 +596,58 @@ public class Wikibase extends Wiki {
                 BufferedReader reader = new BufferedReader(new InputStreamReader(queryServiceConnection.getErrorStream()))) {
                 String inLine = null;
                 while (null != (inLine = reader.readLine())) {
-                    content.append(inLine);
+                    content.append(inLine).append('\n');
                 }
             }
             throw new WikibaseException(content.toString());
         } else {
+            StringBuilder content = new StringBuilder();
+            try (
+                BufferedReader reader = new BufferedReader(new InputStreamReader(queryServiceConnection.getInputStream()))) {
+                String inLine = null;
+                while (null != (inLine = reader.readLine())) {
+                    content.append(inLine).append('\n');
+                }
+            }
+
             DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
             List<Map<String, Object>> resultList = new ArrayList<>();
             try {
                 DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
-                Document document = builder.parse(queryServiceConnection.getInputStream());
-                XPathFactory xpathFactory = XPathFactory.newInstance();
-                XPath xPath = xpathFactory.newXPath();
-                XPathExpression resultsExpr = xPath.compile("/sparql[1]/results[1]");
-                Node resultsNode = (Node) resultsExpr.evaluate(document, XPathConstants.NODE);
+                Document document = builder.parse(new ByteArrayInputStream(content.toString().getBytes("UTF-8")));
 
-                Node eachResult = resultsNode.getFirstChild();
-                while (null != eachResult) {
-                    if ("result".equals(eachResult.getNodeName())) {
-                        Map<String, Object> result = new HashMap<String, Object>();
-                        Node eachBinding = eachResult.getFirstChild();
-                        while (null != eachBinding) {
-                            if ("binding".equals(eachBinding.getNodeName())) {
-                                String name = eachBinding.getAttributes().getNamedItem("name").getNodeValue();
-                                Node childNode = eachBinding.getFirstChild();
-                                String value = childNode.getTextContent();
-                                if ("uri".equalsIgnoreCase(childNode.getNodeName())
-                                    && value.startsWith("http://www.wikidata.org/entity/")) {
-                                    String qId = value.substring("http://www.wikidata.org/entity/".length());
-                                    result.put(name, new Item(new Entity(qId)));
-                                } else {
-                                    result.put(name, value);
+                NodeList resultsNodeList = document.getElementsByTagName("results");
+                if (0 < resultsNodeList.getLength()) {
+                    Node theResultsNode = resultsNodeList.item(0);
+                    Node eachResult = theResultsNode.getFirstChild();
+                    while (null != eachResult) {
+                        if ("result".equals(eachResult.getNodeName())) {
+                            Map<String, Object> result = new HashMap<String, Object>();
+                            Node eachBinding = eachResult.getFirstChild();
+                            while (null != eachBinding) {
+                                if ("binding".equals(eachBinding.getNodeName())) {
+                                    String name = eachBinding.getAttributes().getNamedItem("name").getNodeValue();
+                                    Node childNode = eachBinding.getFirstChild();
+                                    while (null != childNode && Node.ELEMENT_NODE != childNode.getNodeType()) {
+                                        childNode = childNode.getNextSibling();
+                                    }
+                                    String value = childNode.getTextContent();
+                                    if ("uri".equalsIgnoreCase(childNode.getNodeName())
+                                        && value.startsWith("http://www.wikidata.org/entity/")) {
+                                        String qId = value.substring("http://www.wikidata.org/entity/".length());
+                                        result.put(name, new Item(new Entity(qId)));
+                                    } else {
+                                        result.put(name, value);
+                                    }
                                 }
+                                eachBinding = eachBinding.getNextSibling();
                             }
-                            eachBinding = eachBinding.getNextSibling();
+                            if (!result.isEmpty()) {
+                                resultList.add(result);
+                            }
                         }
-                        if (!result.isEmpty()) {
-                            resultList.add(result);
-                        }
+                        eachResult = eachResult.getNextSibling();
                     }
-                    eachResult = eachResult.getNextSibling();
                 }
                 return resultList;
             } catch (Exception e) {
