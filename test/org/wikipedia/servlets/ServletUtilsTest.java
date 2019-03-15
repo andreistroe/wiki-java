@@ -1,6 +1,6 @@
 /**
- *  @(#)WikitextUtilsTest.java 0.02 23/12/2016
- *  Copyright (C) 2017 - 2018 MER-C
+ *  @(#)ServletUtilsTest.java 0.01 26/08/2018
+ *  Copyright (C) 2018-20XX MER-C and contributors
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -17,39 +17,29 @@
  *  along with this program; if not, write to the Free Software Foundation,
  *  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
-
-package org.wikipedia;
+package org.wikipedia.servlets;
 
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.Arrays;
-
 /**
- *  Unit tests for org.wikipedia.ParserUtils
+ *  Unit tests for {@link org.wikipedia.servlets.ServletUtils}.
  *  @author MER-C
  */
-public class WikitextUtilsTest
+public class ServletUtilsTest
 {
-    private static Wiki testWiki;
-    
-    /**
-     *  Initialize wiki objects.
-     *  @throws Exception if a network error occurs
-     */
-    @BeforeAll
-    public static void setUpClass() throws Exception
+    @Test
+    public void sanitizeForAttribute()
     {
-        testWiki = Wiki.newSession("test.wikipedia.org");
-        testWiki.setMaxLag(-1);
+        assertEquals("", ServletUtils.sanitizeForAttribute(null));
+        assertEquals("default", ServletUtils.sanitizeForAttributeOrDefault(null, "default"));
+        assertThrows(NullPointerException.class, 
+            () -> ServletUtils.sanitizeForAttributeOrDefault(null, null));
     }
     
     @Test
-    public void parseWikilink()
+    public void sanitizeForHTML()
     {
-        assertEquals(Arrays.asList("Link", "Link"), WikitextUtils.parseWikilink("[[ Link ]]"));
-        assertEquals(Arrays.asList("Link", "Link"), WikitextUtils.parseWikilink("[[:Link]]"));
-        assertEquals(Arrays.asList("Link", "Description"), WikitextUtils.parseWikilink("[[ Link | Description ]]"));
-        assertEquals(Arrays.asList("Link", "Description"), WikitextUtils.parseWikilink("[[:Link|Description]]"));
+        assertEquals("", ServletUtils.sanitizeForHTML(null));
     }
 }

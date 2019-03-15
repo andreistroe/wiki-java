@@ -85,7 +85,7 @@ public class ArticleEditorIntersector
             .addSingleArgumentFlag("--file", "file", "Read in the list of articles from the given file.")
             .parse(args);
         
-        Wiki wiki = Wiki.createInstance(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
+        Wiki wiki = Wiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
         String category = parsedargs.get("--category");
         String user = parsedargs.get("--contribs");
         boolean adminmode = parsedargs.containsKey("--adminmode");
@@ -101,16 +101,15 @@ public class ArticleEditorIntersector
         
         OffsetDateTime editsafter = (earliestdatestring == null) ? null : OffsetDateTime.parse(earliestdatestring);
         OffsetDateTime editsbefore = (latestdatestring == null) ? null : OffsetDateTime.parse(latestdatestring);
-        String[] articles = null;
+        List<String> articles = null;
         if (defaultstring != null)
-            articles = defaultstring.split("\\s");
+            articles = Arrays.asList(defaultstring.split("\\s"));
         if (filename != null)
-            articles = Files.readAllLines(Paths.get(filename)).toArray(new String[0]);
+            articles = Files.readAllLines(Paths.get(filename));
         
         ArticleEditorIntersector aei = new ArticleEditorIntersector(wiki);
         aei.setIgnoringMinorEdits(nominor);
-        aei.setEarliestDateTime(editsafter);
-        aei.setLatestDateTime(editsbefore);
+        aei.setDateRange(editsafter, editsbefore);
         aei.setIgnoringReverts(noreverts);
         if (adminmode)
         {
@@ -150,13 +149,13 @@ public class ArticleEditorIntersector
                 stuff = stuff.filter(rev -> !rev.isMinor());
             articles = stuff.map(Wiki.Revision::getTitle)
                 .distinct()
-                .toArray(String[]::new);
+                .collect(Collectors.toList());
         }
         // grab from category
         if (category != null)
-            articles = wiki.getCategoryMembers(category);
+            articles = Arrays.asList(wiki.getCategoryMembers(category));
         
-        if (articles.length == 0)
+        if (articles.isEmpty())
         {
             System.err.println("Input has no articles!");
             System.exit(3);
@@ -247,7 +246,7 @@ public class ArticleEditorIntersector
      *  that has a SHA-1 equal to a previous revision on the same page).
      *  @return whether reverts are ignored
      *  @see #setIgnoringReverts(boolean) 
-     *  @see ArrayUtils#removeReverts(Wiki.Revision[])
+     *  @see Revisions#removeReverts(List)
      *  @since 0.02
      */
     public boolean isIgnoringReverts()
@@ -260,7 +259,7 @@ public class ArticleEditorIntersector
      *  that has a SHA-1 equal to a previous revision on the same page).
      *  @param ignorereverts whether reverts will be ignored
      *  @see #isIgnoringReverts()
-     *  @see ArrayUtils#removeReverts(Wiki.Revision[])
+     *  @see Revisions#removeReverts(List)
      *  @since 0.02
      */
     public void setIgnoringReverts(boolean ignorereverts)
@@ -269,22 +268,30 @@ public class ArticleEditorIntersector
     }
     
     /**
-     *  Sets the date/time at which surveys start; no edits will be returned
-     *  before then. Defaults to {@code null}, i.e. no lower bound.
+     *  Sets the dates/times at which surveys start and finish; no edits will be 
+     *  returned outside this range. The default, {@code null}, indicates no
+     *  bound.
      *  @param earliest the desired start date/time
+     *  @param latest the desired end date/time
+     *  @throws IllegalArgumentException if <var>earliest</var> is after
+     *  <var>latest</var>
      *  @see #getEarliestDateTime() 
+     *  @see #getLatestDateTime() 
      *  @since 0.02
      */
-    public void setEarliestDateTime(OffsetDateTime earliest)
+    public void setDateRange(OffsetDateTime earliest, OffsetDateTime latest)
     {
+        if (earliest != null && latest != null && earliest.isAfter(latest))
+            throw new IllegalArgumentException("Date range is reversed.");
         earliestdate = earliest;
+        latestdate = latest;
     }
     
     /**
      *  Gets the date/time at which surveys start; no edits will be returned 
      *  before then.
      *  @return (see above)
-     *  @see #setEarliestDateTime(OffsetDateTime)  
+     *  @see #setDateRange(OffsetDateTime, OffsetDateTime)  
      *  @since 0.02
      */
     public OffsetDateTime getEarliestDateTime()
@@ -293,21 +300,9 @@ public class ArticleEditorIntersector
     }
     
     /**
-     *  Sets the date/time at which surveys finish; no edits will be returned
-     *  after then. Defaults to {@code null}, i.e. when the survey is performed
-     *  @param latest the desired end date/time
-     *  @see #getLatestDateTime()
-     *  @since 0.02
-     */
-    public void setLatestDateTime(OffsetDateTime latest)
-    {
-        latestdate = latest;
-    }
-    
-    /**
      *  Gets the date at which surveys finish. 
      *  @return (see above)
-     *  @see #setLatestDateTime(OffsetDateTime)  
+     *  @see #setDateRange(OffsetDateTime, OffsetDateTime)  
      *  @since 0.02
      */
     public OffsetDateTime getLatestDateTime()
@@ -335,16 +330,17 @@ public class ArticleEditorIntersector
      *  @throws IllegalArgumentException if {@code articles.length < 2} after
      *  duplicates (as in {@code String.equals}) and Special/Media pages are removed
      */
-    public Map<String, List<Wiki.Revision>> intersectArticles(String[] articles, 
+    public Map<String, List<Wiki.Revision>> intersectArticles(Iterable<String> articles, 
         boolean noadmin, boolean nobot, boolean noanon) throws IOException
     {
         Wiki.RequestHelper rh = wiki.new RequestHelper()
             .withinDateRange(earliestdate, latestdate);
                 
         // remove duplicates and fail quickly if less than two pages
-        Set<String> pageset = Arrays.stream(articles)
-            .filter(article -> wiki.namespace(article) >= 0) // remove Special: and Media: pages
-            .collect(Collectors.toSet());
+        Set<String> pageset = new HashSet<>();
+        for (String article : articles)
+            if (wiki.namespace(article) >= 0) // remove Special: and Media: pages
+                pageset.add(article);
         if (pageset.size() < 2)
             throw new IllegalArgumentException("At least two articles are needed to derive a meaningful intersection.");
         
@@ -399,28 +395,29 @@ public class ArticleEditorIntersector
         Set<String> keyset = results.keySet();
         if (noadmin || nobot || noanon)
         {
-            String[] usernames = keyset.toArray(new String[keyset.size()]);
-            Wiki.User[] userinfo = wiki.getUsers(usernames);
-            for (int i = 0; i < userinfo.length; i++)
+            List<String> usernames = new ArrayList<>(keyset);
+            List<Wiki.User> userinfo = wiki.getUsers(usernames);
+            for (int i = 0; i < userinfo.size(); i++)
             {
                 // skip IPs because getUsers returns null
-                if (userinfo[i] == null)
+                Wiki.User user = userinfo.get(i);
+                if (user == null)
                 {
                     if (noanon)
-                        keyset.remove(usernames[i]);
+                        keyset.remove(usernames.get(i));
                     continue;
                 }
                 
-                for (String group : userinfo[i].getGroups())
+                for (String group : user.getGroups())
                 {
                     if (group.equals("sysop") && noadmin)
                     {
-                        keyset.remove(usernames[i]);
+                        keyset.remove(usernames.get(i));
                         continue;
                     }
                     if (group.equals("bot") && nobot)
                     {
-                        keyset.remove(usernames[i]);
+                        keyset.remove(usernames.get(i));
                         continue;
                     }
                 }
@@ -443,14 +440,15 @@ public class ArticleEditorIntersector
      */
     public Map<String, List<Wiki.Revision>> intersectEditors(List<String> users) throws IOException
     {
-        Wiki.RequestHelper rh = wiki.new RequestHelper()
-            .withinDateRange(earliestdate, latestdate);
-                
-        // fetch the list of (deleted) edits
         Map<String, Boolean> options = new HashMap<>();
         if (nominor)
             options.put("minor", Boolean.FALSE);
-        List<List<Wiki.Revision>> revisions = wiki.contribs(users, null, rh, options);
+        Wiki.RequestHelper rh = wiki.new RequestHelper()
+            .withinDateRange(earliestdate, latestdate)
+            .filterBy(options);
+                
+        // fetch the list of (deleted) edits
+        List<List<Wiki.Revision>> revisions = wiki.contribs(users, null, rh);
         Stream<Wiki.Revision> revstream = revisions.stream().flatMap(List::stream);
         
         if (adminmode)

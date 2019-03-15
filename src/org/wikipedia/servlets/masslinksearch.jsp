@@ -7,17 +7,12 @@
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
 
-<%@ include file="header.jsp" %>
-<%@ page contentType="text/html" pageEncoding="UTF-8" trimDirectiveWhitespaces="true"%>
-
 <%
     request.setAttribute("toolname", "Mass linksearch");
 
     boolean https = (request.getParameter("https") != null);
-
-    String wiki = request.getParameter("wiki");
-    wiki = (wiki == null) ? "" : ServletUtils.sanitizeForAttribute(wiki);
-
+    String wiki = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
+    
     // parse inputdomains to pure list of domains
     String inputdomains = request.getParameter("domains");
     if (inputdomains != null)
@@ -32,15 +27,8 @@
     else
         inputdomains = "";
 %>
+<%@ include file="header.jsp" %>
 
-<!doctype html>
-<html>
-<head>
-<link rel=stylesheet href="styles.css">
-<title><%= request.getAttribute("toolname") %></title>
-</head>
-
-<body>
 <p>
 This tool searches a single project for a large collection of links. Enter 
 domain names (example.com, *{{LinkSummary|example.com}} and \\bexample\\.com\\b

@@ -7,27 +7,14 @@
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
 
-<%@ include file="header.jsp" %>
-<%@ page contentType="text/html" pageEncoding="UTF-8" trimDirectiveWhitespaces="true" %>
-
 <%
-    request.setAttribute("toolname", "External link checker (beta)");
+    request.setAttribute("toolname", "External link checker");
 
-    String wiki = request.getParameter("wiki");
-    wiki = (wiki == null) ? "en.wikipedia.org" : ServletUtils.sanitizeForAttribute(wiki);
-
-    String title = request.getParameter("title");
-    title = (title == null) ? "" : ServletUtils.sanitizeForAttribute(title);
+    String wiki = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
+    String title = ServletUtils.sanitizeForAttribute(request.getParameter("title"));
 %>
+<%@ include file="header.jsp" %>
 
-<!doctype html>
-<html>
-<head>
-<link rel=stylesheet href="styles.css">
-<title><%= request.getAttribute("toolname") %></title>
-</head>
-
-<body>
 <p>
 This tool performs linksearches to count how many live links exist to each 
 unique domain used in external links by a given article. Useful for finding
@@ -49,18 +36,17 @@ long-standing reference spam.
 <%
     if (!title.isEmpty())
     {
-        out.println("<hr>");
-
         Wiki enWiki = Wiki.createInstance(wiki);
         ExternalLinkPopularity elp = new ExternalLinkPopularity(enWiki);
         elp.getExcludeList().addAll(Arrays.asList("wmflabs.org", "edwardbetts.com", "archive.org"));
         Map<String, Map<String, List<String>>> results = elp.fetchExternalLinks(Arrays.asList(title));
         
         if (results.get(title).isEmpty())
-            out.println("<span class=\"error\">No results found!</span>");
+            request.setAttribute("error", "No results found!");
         else
         {
-            Map<String, Map<String, Integer>> popresults = elp.determineLinkPopularity(results);
+            Map<String, Integer> popresults = elp.determineLinkPopularity(ExternalLinkPopularity.flatten(results));
+            out.println("<hr>");
             out.println(elp.exportResultsAsHTML(results, popresults));
         }
     }

@@ -7,59 +7,29 @@
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
 
-<%@ include file="header.jsp" %>
-<%@ page contentType="text/html" pageEncoding="UTF-8" trimDirectiveWhitespaces="true" %>
-
+<%@ include file="datevalidate.jspf" %>
 <%
     request.setAttribute("toolname", "Article/editor intersection");
+    request.setAttribute("scripts", new String[] { "common.js", "collapsible.js", "EditorIntersection.js" });
 
-    String wikiparam = request.getParameter("wiki");
-    wikiparam = (wikiparam == null) ? "en.wikipedia.org" : ServletUtils.sanitizeForAttribute(wikiparam);
+    String wikiparam = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
 
     String mode = request.getParameter("mode");
     if (mode == null)
-        mode = "pages";
+        mode = "none";
 
-    String pages = request.getParameter("pages");
-    pages = (pages == null) ? "" : ServletUtils.sanitizeForHTML(pages);
-
-    String category = request.getParameter("category");
-    if (category != null)
-        category = ServletUtils.sanitizeForAttribute(category);
-
-    String user = request.getParameter("user");
-    if (user != null)
-        user = ServletUtils.sanitizeForAttribute(user);
-
-    String earliest = request.getParameter("earliest");
-    OffsetDateTime earliestdate = null;
-    earliest = (earliest == null) ? "" : ServletUtils.sanitizeForAttribute(earliest);
-    if (!earliest.isEmpty())
-        earliestdate = OffsetDateTime.parse(earliest + "T00:00:00Z");
-    
-    String latest = request.getParameter("latest");
-    OffsetDateTime latestdate = null;
-    latest = (latest == null) ? "" : ServletUtils.sanitizeForAttribute(latest);
-    if (!latest.isEmpty())
-        latestdate = OffsetDateTime.parse(latest + "T23:59:59Z");
-    
+    String pages = ServletUtils.sanitizeForHTML(request.getParameter("pages"));    
+    String category = ServletUtils.sanitizeForAttribute(request.getParameter("category"));
+    String user = ServletUtils.sanitizeForAttribute(request.getParameter("user"));
+        
     boolean noadmin = (request.getParameter("noadmin") != null);
     boolean nobot = (request.getParameter("nobot") != null);
     boolean noanon = (request.getParameter("noanon") != null);
     boolean nominor = (request.getParameter("nominor") != null);
     boolean noreverts = (request.getParameter("noreverts") != null);
 %>
+<%@ include file="header.jsp" %>
 
-<!doctype html>
-<html>
-<head>
-<link rel=stylesheet href="styles.css">
-<script src="collapsible.js"></script>
-<script src="EditorIntersection.js"></script>
-<title><%= request.getAttribute("toolname") %></title>
-</head>
-
-<body>
 <p>
 This tool retrieves the common editors of a given set of pages. Query limits of
 1500 edits/revisions and 25 articles (contributions: most recent, category members: 
@@ -87,29 +57,26 @@ first in the GUI) apply.
         </textarea>
 <tr>
     <td colspan=2>Exclude: 
-    <td><input type=checkbox name=noadmin value=1<%= (pages.isEmpty() || noadmin) ? " checked" : "" %>>admins</input>
-        <input type=checkbox name=nobot value=1<%= (pages.isEmpty() || nobot) ? " checked" : "" %>>bots</input>
-        <input type=checkbox name=noanon value=1<%= noanon ? " checked" : "" %>>IPs</input>
-        <input type=checkbox name=nominor value=1<%= nominor ? " checked" : "" %>>minor edits</input>
-        <input type=checkbox name=noreverts value=1<%= noreverts ? " checked" : "" %>>reverts</input>
+    <td><input type=checkbox name=noadmin value=1<%= (pages.isEmpty() || noadmin) ? " checked" : "" %>>admins
+        <input type=checkbox name=nobot value=1<%= (pages.isEmpty() || nobot) ? " checked" : "" %>>bots
+        <input type=checkbox name=noanon value=1<%= noanon ? " checked" : "" %>>IPs
+        <input type=checkbox name=nominor value=1<%= nominor ? " checked" : "" %>>minor edits
+        <input type=checkbox name=noreverts value=1<%= noreverts ? " checked" : "" %>>reverts
 <tr>
     <td colspan=2>Show changes from:
-    <td><input type=date name=earliest value="<%= earliest %>"></input> to 
-        <input type=date name=latest value="<%= latest %>"></input> (inclusive)
+    <td><input type=date name=earliest value="<%= earliest %>"> to 
+        <input type=date name=latest value="<%= latest %>"> (inclusive)
 </table>
 <br>
 <input type=submit value=Search>
 </form>
 
 <%
-    if (earliestdate != null && latestdate != null && earliestdate.isAfter(latestdate))
+    if (request.getAttribute("error") != null)
     {
 %>
-    <hr>
-    <span class="error">Earliest date is after latest date!</span>
 <%@ include file="footer.jsp" %>
 <%
-        return;
     }
 
     Wiki wiki = Wiki.createInstance(wikiparam);
@@ -117,55 +84,46 @@ first in the GUI) apply.
     wiki.setQueryLimit(1500);
 
     Stream<String> pagestream = null;
-    if (mode.equals("category"))
-        pagestream = Arrays.stream(wiki.getCategoryMembers(category));
-    else if (mode.equals("contribs"))
+    switch (mode)
     {
-        out.println("<hr>");
-        pagestream = Arrays.stream(wiki.contribs(user))
-            .map(Wiki.Revision::getPage);
-    }
-    else if (mode.equals("pages"))
-    {
-        // state with no input parameters
-        if (pages.isEmpty())
-        {
+        case "category":
+            pagestream = Arrays.stream(wiki.getCategoryMembers(category));
+            break;
+        case "contribs":
+            pagestream = wiki.contribs(user, null).stream().map(Wiki.Revision::getTitle);
+            break;
+        case "pages":
+            pagestream = Arrays.stream(pages.split("\r\n")).map(String::trim);
+            break;
+        default:
+            // state with no input parameters       
 %>
 <%@ include file="footer.jsp" %>
 <%
-            return;
-        }
-        pagestream = Arrays.stream(pages.split("\r\n")).map(String::trim);
     }
-    out.println("<hr>");
-    String[] pagesarray = pagestream
-        .distinct()
+        
+    Set<String> pagesarray = pagestream
         .filter(title -> wiki.namespace(title) >= 0)
         .limit(25)
-        .toArray(String[]::new);
-    if (pagesarray.length < 2)
+        .collect(Collectors.toSet());
+    if (pagesarray.size() < 2)
     {
+        request.setAttribute("error", "Need at least two distinct pages to perform an intersection!");
 %>
-    <span class="error">Need at least two distinct pages to perform an intersection!</span>
 <%@ include file="footer.jsp" %>
 <%
-        return;
     }
     ArticleEditorIntersector aei = new ArticleEditorIntersector(wiki);
     aei.setIgnoringMinorEdits(nominor);
     aei.setIgnoringReverts(noreverts);
-    if (!earliest.isEmpty())
-        aei.setEarliestDateTime(earliestdate);
-    if (!latest.isEmpty())
-        aei.setLatestDateTime(latestdate);
+    aei.setDateRange(earliest_odt, latest_odt);
     Map<String, List<Wiki.Revision>> results = aei.intersectArticles(pagesarray, noadmin, nobot, noanon);
     if (results.isEmpty())
     {
+        request.setAttribute("error", "No intersection after applying exclusions and removing non-existing pages!");
 %>
-    <span class="error">No intersection after applying exclusions and removing non-existing pages!</span>
 <%@ include file="footer.jsp" %>
 <%
-        return;
     }
     Map<String, Map<String, List<Wiki.Revision>>> bypage = new HashMap<>();
     results.forEach((key, value) ->
@@ -176,6 +134,9 @@ first in the GUI) apply.
         bypage.put(key, grouppage);
     });
     Pages pageUtils = Pages.of(wiki);
+    Revisions revisionUtils = Revisions.of(wiki);
+    Users userUtils = Users.of(wiki);
+
     String blah = bypage.entrySet().stream()
         .sorted((entry1, entry2) -> 
         {
@@ -188,7 +149,7 @@ first in the GUI) apply.
             sb.append("<h2>");
             sb.append(entry.getKey());
             sb.append("</h2>\n");
-            sb.append(ParserUtils.generateUserLinks(wiki, entry.getKey()));
+            sb.append(userUtils.generateHTMLSummaryLinks(entry.getKey()));
 
             for (Map.Entry<String, List<Wiki.Revision>> entry2 : entry.getValue().entrySet())
             {
@@ -202,11 +163,12 @@ first in the GUI) apply.
                     title.append("s");
                 sb.append("<p>\n");
                 sb.append(ServletUtils.beginCollapsibleSection(title.toString(), true));
-                sb.append(ParserUtils.revisionsToHTML(wiki, revs.toArray(new Wiki.Revision[revs.size()])));
+                sb.append(revisionUtils.toHTML(revs));
                 sb.append(ServletUtils.endCollapsibleSection());
             }
             return sb;
         }).collect(Collectors.joining());
+    out.println("<hr>");
     out.println(blah);
 %>
 <%@ include file="footer.jsp" %>

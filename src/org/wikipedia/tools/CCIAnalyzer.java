@@ -34,7 +34,7 @@ import org.wikipedia.*;
  */
 public class CCIAnalyzer
 {
-    private static Wiki enWiki = Wiki.createInstance("en.wikipedia.org");
+    private static Wiki enWiki = Wiki.newSession("en.wikipedia.org");
     
     /**
      *  Runs this program.
@@ -97,7 +97,7 @@ public class CCIAnalyzer
                 from.put("revid", oldid);
                 Map<String, Object> to = new HashMap<>();
                 to.put("revid", Wiki.PREVIOUS_REVISION);
-                diff = enWiki.diff(from, -1, to, -1);
+                diff = enWiki.diff(from, to);
                 exception = false;
             }
             catch (IOException ex)
@@ -121,6 +121,8 @@ public class CCIAnalyzer
                 // HACK: RevisionDeleted revision or deleted article.
                 continue;
             }
+            if (diff == null) // RevisionDeleted revision
+                continue;
             // Condense deltas to avoid problems like https://en.wikipedia.org/w/index.php?title=&diff=prev&oldid=486611734
             diff = diff.toLowerCase(enWiki.locale());
             diff = diff.replace(deltaend + " " + deltabegin, " ");
@@ -196,8 +198,7 @@ public class CCIAnalyzer
             cleaned.append("\n");
         }
         System.out.println(cleaned);
-        System.out.println("----------------------");
-        System.out.println("Diffs removed: " + minoredits.size() + " of " + count 
+        System.err.println("Diffs removed: " + minoredits.size() + " of " + count 
             + ", articles removed: " + removedarticles);
     }
     

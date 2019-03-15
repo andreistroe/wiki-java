@@ -21,8 +21,8 @@ package org.wikipedia.tools;
 
 import java.util.*;
 
-import org.junit.*;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.*;
 import org.wikipedia.Wiki;
 
 /**
@@ -40,7 +40,7 @@ public class ExternalLinkPopularityTest
      */
     public ExternalLinkPopularityTest()
     {
-        testWiki = Wiki.createInstance("test.wikipedia.org");
+        testWiki = Wiki.newSession("test.wikipedia.org");
         testWiki.setMaxLag(-1);
         elp = new ExternalLinkPopularity(testWiki);
     }

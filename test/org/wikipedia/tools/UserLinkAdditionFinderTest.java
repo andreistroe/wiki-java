@@ -25,9 +25,9 @@ import java.time.*;
 import java.time.format.*;
 import java.util.*;
 import java.util.stream.*;
-import org.junit.*;
+import org.junit.jupiter.api.*;
 import org.wikipedia.*;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  *  Diff parsing unit tests for the UserLinkAdditionFinder.
@@ -43,8 +43,8 @@ public class UserLinkAdditionFinderTest
      */
     public UserLinkAdditionFinderTest()
     {
-        testWiki = WMFWiki.createInstance("test.wikipedia.org");
-        enWiki = WMFWiki.createInstance("en.wikipedia.org");
+        testWiki = WMFWiki.newSession("test.wikipedia.org");
+        enWiki = WMFWiki.newSession("en.wikipedia.org");
         finder_test = new UserLinkAdditionFinder(testWiki);
         finder_en = new UserLinkAdditionFinder(enWiki);
     }

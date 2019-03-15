@@ -22,8 +22,8 @@ package org.wikipedia;
 
 import java.util.*;
 import java.time.OffsetDateTime;
-import org.junit.*;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  *  Unit tests for {@link org.wikipedia.WMFWiki}.
@@ -38,7 +38,7 @@ public class WMFWikiTest
      */
     public WMFWikiTest()
     {
-        enWiki = WMFWiki.createInstance("en.wikipedia.org");
+        enWiki = WMFWiki.newSession("en.wikipedia.org");
         enWiki.setMaxLag(-1);
     }
     
@@ -57,13 +57,7 @@ public class WMFWikiTest
     @Test
     public void getLogEntries() throws Exception
     {
-        try
-        {
-            enWiki.getLogEntries(WMFWiki.SPAM_BLACKLIST_LOG, null, null);
-        }
-        catch (SecurityException expected)
-        {
-        }
+        assertEquals(Collections.emptyList(), enWiki.getLogEntries(WMFWiki.SPAM_BLACKLIST_LOG, null, null));
     }
     
     @Test
@@ -73,29 +67,19 @@ public class WMFWikiTest
         enWiki.requiresExtension("SpamBlacklist");
         enWiki.requiresExtension("CheckUser");
         enWiki.requiresExtension("Abuse Filter");
-        try
-        {
-            enWiki.requiresExtension("This extension does not exist.");
-            fail("Required a non-existing extension.");
-        }
-        catch (UnsupportedOperationException expected)
-        {
-        }
+        assertThrows(UnsupportedOperationException.class,
+            () -> enWiki.requiresExtension("This extension does not exist."),
+            "required a non-existing extension");        
     }
     
     @Test
     public void getGlobalUsage() throws Exception
     {
-        try
-        {
-            enWiki.getGlobalUsage("Not an image");
-            fail("Tried to get global usage for a non-file page");
-        }
-        catch (IllegalArgumentException expected)
-        {
-        }
+        assertThrows(IllegalArgumentException.class,
+            () -> enWiki.getGlobalUsage("Not an image"),
+            "tried to get global usage for a non-file page");
         // YARR!
-        assertEquals("getGlobalUsage: non-existing file", 0, enWiki.getGlobalUsage("File:Pirated Movie Full HD Stream.mp4").length);
+        assertEquals(0, enWiki.getGlobalUsage("File:Pirated Movie Full HD Stream.mp4").length, "unused, non-existing file");
     }
     
     /**
@@ -106,7 +90,7 @@ public class WMFWikiTest
      *  @throws Exception if a network error occurs
      */
     @Test
-    @Ignore
+    @Disabled
     public void getAbuseFilterLogs() throws Exception
     {
         // https://en.wikipedia.org/wiki/Special:AbuseLog?wpSearchUser=Miniapolis&wpSearchTitle=Catopsbaatar&wpSearchFilter=1
@@ -116,11 +100,34 @@ public class WMFWikiTest
             .byTitle("Catopsbaatar");
         List<Wiki.LogEntry> afl = enWiki.getAbuseLogEntries(new int[] { 1 }, helper);
         Wiki.LogEntry ale = afl.get(0);
-        assertEquals("abuse log: id", 20838976L, ale.getID());
-        assertEquals("abuse log: username", "Miniapolis", ale.getUser());
-        assertEquals("abuse log: target", "Catopsbaatar", ale.getTitle());
-        assertEquals("abuse log: timestamp", OffsetDateTime.parse("2018-04-05T22:58:14Z"), ale.getTimestamp());
-        assertEquals("abuse log: action", "edit", ale.getAction());
+        assertEquals(20838976L, ale.getID());
+        assertEquals("Miniapolis", ale.getUser());
+        assertEquals("Catopsbaatar", ale.getTitle());
+        assertEquals(OffsetDateTime.parse("2018-04-05T22:58:14Z"), ale.getTimestamp());
+        assertEquals("edit", ale.getAction());
         // TODO: test details when they are overhauled
+    }
+    
+    @Test
+    public void getLedeAsPlainText() throws Exception
+    {
+        List<String> pages = Arrays.asList("Java", "Create a page", "Albert Einstein");
+        List<String> text = enWiki.getLedeAsPlainText(pages);
+        // Cannot assert more than the first two words because the result is
+        // non-deterministic. Test is potentially fragile.
+        assertTrue(text.get(0).startsWith("Java "));
+        assertTrue(text.get(1) == null);
+        assertTrue(text.get(2).startsWith("Albert Einstein "));
+    }
+    
+    @Test
+    public void getPlainText() throws Exception
+    {
+        List<String> pages = Arrays.asList("Java", "Create a page", "Albert Einstein");
+        List<String> shorttext = enWiki.getLedeAsPlainText(pages);
+        List<String> text = enWiki.getPlainText(pages);
+        assertTrue(text.get(0).startsWith(shorttext.get(0)));
+        assertTrue(text.get(1) == null);
+        assertTrue(text.get(2).startsWith(shorttext.get(2)));
     }
 }

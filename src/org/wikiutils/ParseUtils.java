@@ -62,9 +62,9 @@ public class ParseUtils
 
 	public static String getRedirectsAsRegex(String template, Wiki wiki) throws IOException
 	{
-		String r = "(?si)\\{{2}?\\s*?(Template:)??\\s*?(" + namespaceStrip(template, wiki);
-		for (String str : wiki.whatLinksHere(template, true, Wiki.TEMPLATE_NAMESPACE))
-			r += "|" + namespaceStrip(str, wiki);
+		String r = "(?si)\\{{2}?\\s*?(Template:)??\\s*?(" + wiki.removeNamespace(template);
+		for (String str : wiki.whatLinksHere(Arrays.asList(template), true, Wiki.TEMPLATE_NAMESPACE).get(0))
+			r += "|" + wiki.removeNamespace(str);
 		r += ").*?\\}{2}?";
 
 		return r;
@@ -102,7 +102,7 @@ public class ParseUtils
 	{
 		String[] list = wiki.whatTranscludesHere(template);
 		if (template.startsWith("Template:"))
-			template = namespaceStrip(template, wiki);
+			template = wiki.removeNamespace(template);
 
 		for (String page : list)
 		{
@@ -115,24 +115,6 @@ public class ParseUtils
 				e.printStackTrace();
 			}
 		}
-	}
-
-	/**
-	 * Strips the namespace prefix of a page, if applicable. If there is no
-	 * namespace attached to the passed in string, then the original string is
-	 * returned.
-	 * 
-	 * @param title The String to remove a namespace identifier from.
-	 * @param wiki the home wiki
-	 * @return The String without a namespace identifier.
-         * @throws IOException if a network error occurs (rare)
-	 * @deprecated replace with {@link org.wikipedia.Wiki#removeNamespace(java.lang.String)}
-	 */
-        @Deprecated
-	public static String namespaceStrip(String title, Wiki wiki) throws IOException
-	{
-		String ns = wiki.namespaceIdentifier(wiki.namespace(title));
-                return ns.isEmpty() ? title : title.substring(ns.length() + 1);
 	}
 
 	/**
@@ -341,7 +323,9 @@ public class ParseUtils
          *  @param c the character
          *  @param len the final length
          *  @return see above
+         *  @deprecated as of Java 11, use {@code String.repeat()}
          */
+        @Deprecated
         public static String getString(char c, int len)
         {
                 char[] temp = new char[len];
@@ -716,22 +700,5 @@ public class ParseUtils
                 else
                         templateName = template.substring(2, index);
                 return templateName;
-        }
-        
-        /**
-         *  TODO.
-         *  @param internalLink
-         *  @return 
-         *  Contributed by Hunsu.
-         *  @deprecated see org.wikipedia.ParserUtils.parseWikilink
-         */
-        @Deprecated
-        public static String getInternalLinkTitle(String internalLink)
-        {
-                if(internalLink == null)
-                        return null;
-                Pattern p = Pattern.compile("\\[\\[.*?\\|(.*)\\]\\]");
-                Matcher m = p.matcher(internalLink);
-                return m.find() ? m.group(1) : internalLink;
         }
 }

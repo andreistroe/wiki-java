@@ -16,81 +16,107 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 --%>
 
-<%@ include file="header.jsp" %>
-<%@ page pageEncoding="UTF-8" trimDirectiveWhitespaces="true"%>
-<%@ page import="java.net.URLEncoder" %>
-
+<%@ include file="datevalidate.jspf" %>
 <%
     request.setAttribute("toolname", "Contribution surveyor");
+    request.setAttribute("scripts", new String[] { "common.js", "ContributionSurveyor.js" });
 
     String user = request.getParameter("user");
+    String category = request.getParameter("category");
     boolean nominor = (request.getParameter("nominor") != null);
+    boolean noreverts = (request.getParameter("noreverts") != null);
 
-    String homewiki = request.getParameter("wiki");
-    homewiki = (homewiki == null) ? "en.wikipedia.org" : ServletUtils.sanitizeForAttribute(homewiki);
-
-    String earliest = request.getParameter("earliest");
-    OffsetDateTime earliestdate = null;
-    earliest = (earliest == null) ? "" : ServletUtils.sanitizeForAttribute(earliest);
-    if (!earliest.isEmpty())
-        earliestdate = OffsetDateTime.parse(earliest + "T00:00:00Z");
-
-    String latest = request.getParameter("latest");
-    OffsetDateTime latestdate = null;
-    latest = (latest == null) ? "" : ServletUtils.sanitizeForAttribute(latest);
-    if (!latest.isEmpty())
-        latestdate = OffsetDateTime.parse(latest + "T23:59:59Z");
-
-    String bytefloor = request.getParameter("bytefloor");
-    bytefloor = (bytefloor == null) ? "150" : ServletUtils.sanitizeForAttribute(bytefloor);
-
-    // error conditions
-    boolean noresults = false;
-    boolean baddate = (earliestdate != null && latestdate != null && earliestdate.isAfter(latestdate));
+    String homewiki = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
+    String bytefloor = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("bytefloor"), "150");
     
-    if (user != null && !baddate)
+    Wiki wiki = Wiki.createInstance(homewiki);
+    wiki.setQueryLimit(35000); // 70 network requests
+
+    List<String> users = new ArrayList<>();
+    if (user != null)
+        users.add(user);
+    else if (category != null)
     {
-        // get results
-        Wiki wiki = Wiki.createInstance(homewiki);
-        wiki.setQueryLimit(35000); // 70 network requests
-        ContributionSurveyor surveyor = new ContributionSurveyor(wiki);
+        String[] catmembers = wiki.getCategoryMembers(category, Wiki.USER_NAMESPACE);
+        if (catmembers.length == 0)
+            request.setAttribute("error", "Category \"" + ServletUtils.sanitizeForHTML(category) + "\" contains no users!");
+        else
+            for (String tempstring : catmembers)
+                users.add(wiki.removeNamespace(tempstring));
+    }
+
+    ContributionSurveyor surveyor = new ContributionSurveyor(wiki);
+    String survey = null;
+
+    // get results
+    if (request.getAttribute("error") == null && !users.isEmpty())
+    {
         surveyor.setIgnoringMinorEdits(nominor);
-        if (!earliest.isEmpty())
-            surveyor.setEarliestDateTime(earliestdate);
-        if (!latest.isEmpty())
-            surveyor.setLatestDateTime(latestdate);
+//        surveyor.setIgnoringReverts(noreverts);
+        surveyor.setDateRange(earliest_odt, latest_odt);
         surveyor.setMinimumSizeDiff(Integer.parseInt(bytefloor));
-        Map<String, Map<String, List<Wiki.Revision>>> survey = surveyor.contributionSurvey(new String[] { user }, Wiki.MAIN_NAMESPACE);
-        Map<String, List<Wiki.Revision>> usersurvey = survey.entrySet().iterator().next().getValue();
-        noresults = usersurvey.isEmpty();
-
-        if (!noresults)
+        
+        Map<String, Map<String, List<Wiki.Revision>>> surveydata = surveyor.contributionSurvey(users, Wiki.MAIN_NAMESPACE);
+        boolean noresults = true;
+        for (Map.Entry<String, Map<String, List<Wiki.Revision>>> entry : surveydata.entrySet())
         {
-            // create download prompt
-            response.setContentType("text/plain;charset=UTF-8");
-            response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(user, "UTF-8") + ".txt");
-
-            // write results
-            out.print(ParserUtils.generateUserLinksAsWikitext(user));
-            out.println("* Survey URL: " + request.getRequestURL() + "?" + request.getQueryString());
-            out.println();
-            out.print(surveyor.formatTextSurveyAsWikitext(null, usersurvey));
-            out.println(surveyor.generateWikitextFooter());
-            out.flush();
-            out.close();
-            return;
+            if (!entry.getValue().isEmpty())
+            {
+                noresults = false;
+                break;
+            }
+        }
+        if (noresults)
+        {
+            request.setAttribute("error", "No edits found!");
+            survey = null;
+        }
+        else
+        {
+            request.setAttribute("contenttype", "text");
+            StringBuilder sb = new StringBuilder();
+            if (category != null)
+            {
+                surveydata.forEach((username, usersurvey) ->
+                {
+                    // skip no results users
+                    if (usersurvey.isEmpty())
+                        return;
+                    
+                    sb.append("== ");
+                    sb.append(username);
+                    sb.append(" ==\n");
+                    sb.append(Users.generateWikitextSummaryLinks(username));
+                    sb.append("\n");
+                    sb.append(surveyor.formatTextSurveyAsWikitext(username, usersurvey));
+                    sb.append("\n");
+                });
+                survey = sb.toString();
+            }
+            else // user != null
+                survey = surveyor.formatTextSurveyAsWikitext(null, surveydata.entrySet().iterator().next().getValue());
         }
     }
 %>
+<%@ include file="header.jsp" %>
+<%  
+    if (survey != null)
+    {
+        if (user != null)
+        {
+            response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(user, "UTF-8") + ".txt");
+            out.print(Users.generateWikitextSummaryLinks(user));            
+        }
+        else // category != null
+            response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(category, "UTF-8") + ".txt");
+        out.println("* Survey URL: " + request.getRequestURL() + "?" + request.getQueryString());
+        out.println();
+        out.print(survey);
+        out.println(surveyor.generateWikitextFooter());
+        return;
+    }
+ %>
 
-<!doctype html>
-<html>
-<head>
-<link rel=stylesheet href="styles.css">
-<title><%= request.getAttribute("toolname") %></title>
-</head>
-
-<body>
 <p>
 This tool generates a listing of a user's edits for use at <a
 href="//en.wikipedia.org/wiki/WP:CCI">Contributor copyright investigations</a>
@@ -101,39 +127,28 @@ and other venues. It isolates and ranks major edits by size. A query limit of
 <form action="./contributionsurveyor.jsp" method=GET>
 <table>
 <tr>
+    <td><input type=radio name=mode id="radio_user" checked>
     <td>User to survey:
-    <td><input type=text name=user value="<%= user == null ? "" : ServletUtils.sanitizeForAttribute(user) %>" required>
+    <td><input type=text name=user id=user value="<%= user == null ? "" : ServletUtils.sanitizeForAttribute(user) %>" required>
 <tr>
-    <td>Home wiki:
+    <td><input type=radio name=mode id="radio_category">
+    <td>Fetch users from category:
+    <td><input type=text name=category id=category value="<%= category == null ? "" : ServletUtils.sanitizeForAttribute(category) %>" disabled>
+<tr>
+    <td colspan=2>Home wiki:
     <td><input type=text name="wiki" value="<%= homewiki %>" required>
 <tr>
-    <td>Exclude:
-    <td><input type=checkbox name=nominor value=1<%= (user == null || nominor) ? " checked" : "" %>>minor edits</input>
+    <td colspan=2>Exclude:
+    <td><input type=checkbox name=nominor value=1<%= (user == null || nominor) ? " checked" : "" %>>minor edits
+<!--        <input type=checkbox name=noreverts value=1<%= (user == null || noreverts) ? " checked" : "" %>>reverts (partial) -->
 <tr>
-    <td>Show changes from:
-    <td><input type=date name=earliest value="<%= earliest %>"></input> to 
-        <input type=date name=latest value="<%= latest %>"></input> (inclusive)
+    <td colspan=2>Show changes from:
+    <td><input type=date name=earliest value="<%= earliest %>"> to 
+        <input type=date name=latest value="<%= latest %>"> (inclusive)
 <tr>
-    <td>Show changes that added at least:
-    <td><input type=number name=bytefloor value="<%= bytefloor %>"></input> bytes
+    <td colspan=2>Show changes that added at least:
+    <td><input type=number name=bytefloor value="<%= bytefloor %>"> bytes
 </table>
 <input type=submit value="Survey user">
 </form>
-
-<%
-    if (user != null && noresults)
-    {
-%>
-<hr>
-<span class="error">No edits found!</span>
-<%
-    }
-    else if (baddate)
-    {
-%>
-<hr>
-<span class="error">Earliest date is after latest date!</span>
-<%
-    }
-%>
 <%@ include file="footer.jsp" %>

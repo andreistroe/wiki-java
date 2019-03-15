@@ -1,6 +1,6 @@
 /**
  *  @(#)ContributionSurveyorUnitTest.java 0.04 25/01/2018
- *  Copyright (C) 2011-2018 MER-C
+ *  Copyright (C) 2011-20xx MER-C
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Affero General Public License as
@@ -19,8 +19,8 @@ package org.wikipedia.tools;
 
 import java.util.*;
 import java.time.OffsetDateTime;
-import org.junit.*;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.*;
 import org.wikipedia.Wiki;
 
 /**
@@ -38,7 +38,7 @@ public class ContributionSurveyorTest
      */
     public ContributionSurveyorTest()
     {
-        enWiki = Wiki.createInstance("en.wikipedia.org");
+        enWiki = Wiki.newSession("en.wikipedia.org");
         enWiki.setMaxLag(-1);
         surveyor = new ContributionSurveyor(enWiki);
     }
@@ -46,7 +46,7 @@ public class ContributionSurveyorTest
     @Test
     public void getWiki()
     {
-        assertEquals("getWiki", "en.wikipedia.org", surveyor.getWiki().getDomain());
+        assertEquals("en.wikipedia.org", surveyor.getWiki().getDomain());
     }
     
     @Test
@@ -54,27 +54,46 @@ public class ContributionSurveyorTest
     {
         List<String> users = Arrays.asList(
             "HilStev", // no edits: https://en.wikipedia.org/wiki/Special:Contributions/HilStev
-            "OfficialPankajPatidar" // no mainspace edits: https://en.wikipedia.org/wiki/Special:Contributions/OfficialPankajPatidar
+            "OfficialPankajPatidar", // no mainspace edits: https://en.wikipedia.org/wiki/Special:Contributions/OfficialPankajPatidar
+            "Rt11642" // mainspace edits all revisiondeleted: https://en.wikipedia.org/wiki/Special:Contributions/Rt11642
         );
         Map<String, Map<String, List<Wiki.Revision>>> results = surveyor.contributionSurvey(users, Wiki.MAIN_NAMESPACE);
-        assertTrue("User with no edits", results.get("HilStev").isEmpty());
-        assertTrue("Check namespace filter", results.get("OfficialPankajPatidar").isEmpty());
+        assertTrue(results.get(users.get(0)).isEmpty(), "User with no edits");
+        assertTrue(results.get(users.get(1)).isEmpty(), "Check namespace filter");
+        assertTrue(results.get(users.get(2)).isEmpty(), "Check revision deletion");
     }
     
     @Test
     public void setDateRange() throws Exception
-    {
-        // first, verify get/set works
+    {        
+        // verify get/set works
+        assertThrows(IllegalArgumentException.class,
+            () -> surveyor.setDateRange(OffsetDateTime.now(), OffsetDateTime.MIN));
         OffsetDateTime earliest = OffsetDateTime.parse("2017-12-07T00:00:00Z");
-        surveyor.setEarliestDateTime(earliest);
-        assertEquals("getEarliestDateTime", earliest, surveyor.getEarliestDateTime());
         OffsetDateTime latest = OffsetDateTime.parse("2018-01-23T00:00:00Z");
-        surveyor.setLatestDateTime(latest);
-        assertEquals("getLatestDateTime", latest, surveyor.getLatestDateTime());
+        surveyor.setDateRange(earliest, latest);
+        assertEquals(earliest, surveyor.getEarliestDateTime());
+        assertEquals(latest, surveyor.getLatestDateTime());
         
         // https://en.wikipedia.org/w/index.php?title=Special%3AContributions&contribs=user&target=Jimbo+Wales&namespace=0&start=2017-12-01&end=2018-01-24
         // https://en.wikipedia.org/w/index.php?title=Special%3AContributions&contribs=user&target=Jimbo+Wales&namespace=0&start=2017-12-07&end=2018-01-17
         Map<String, Map<String, List<Wiki.Revision>>> results = surveyor.contributionSurvey(Arrays.asList("Jimbo Wales"), Wiki.MAIN_NAMESPACE);
-        assertTrue("Check date/time bounds", results.get("Jimbo Wales").isEmpty());
+        assertTrue(results.get("Jimbo Wales").isEmpty(), "check date range functionality");
+    }
+    
+    @Test
+    public void setIgnoreMinorEdits() throws Exception
+    {
+        // first, verify get/set works
+        assertTrue(surveyor.isIgnoringMinorEdits()); 
+        surveyor.setIgnoringMinorEdits(false);
+        assertFalse(surveyor.isIgnoringMinorEdits()); 
+        
+        // check functionality
+        List<String> users = Arrays.asList(
+            "Jjdevine2" // https://en.wikipedia.org/wiki/Special:Contributions/Jjdevine2
+        );
+        Map<String, Map<String, List<Wiki.Revision>>> results = surveyor.contributionSurvey(users, Wiki.MAIN_NAMESPACE);
+        assertEquals(2, results.get(users.get(0)).size(), "User with nearly only minor edits");
     }
 }

@@ -1,5 +1,5 @@
 /**
- *  @(#)ContributionSurveyor.java 0.04 25/01/2018
+ *  @(#)ContributionSurveyor.java 0.05 17/08/2018
  *  Copyright (C) 2011-2018 MER-C
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -46,7 +46,7 @@ public class ContributionSurveyor
 {
     private final Wiki wiki;
     private OffsetDateTime earliestdate, latestdate;
-    private boolean nominor = true;
+    private boolean nominor = true; // noreverts = true;
     private int minsizediff = 150;
 
     /**
@@ -73,12 +73,13 @@ public class ContributionSurveyor
             .addBooleanFlag("--images", "Survey images both on the home wiki and Commons.")
             .addBooleanFlag("--userspace", "Survey userspace as well.")
             .addBooleanFlag("--includeminor", "Include minor edits.")
+//            .addBooleanFlag("--includereverts", "Include reverts.")
             .addSingleArgumentFlag("--minsize", "size", "Only includes edits that add more than size bytes (default: 150).")
             .addSingleArgumentFlag("--editsafter", "date", "Include edits made after this date (ISO format).")
             .addSingleArgumentFlag("--editsbefore", "date", "Include edits made before this date (ISO format).")
             .parse(args);
 
-        Wiki homewiki = Wiki.createInstance(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
+        Wiki homewiki = Wiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
         String infile = parsedargs.get("--infile");
         String outfile = parsedargs.get("--outfile");
         String wikipage = parsedargs.get("--wikipage");
@@ -87,6 +88,7 @@ public class ContributionSurveyor
         boolean images = parsedargs.containsKey("--images");
         boolean userspace = parsedargs.containsKey("--userspace");
         boolean nominor = !parsedargs.containsKey("--includeminor");
+//        boolean noreverts = !parsedargs.containsKey("--includereverts");
         int minsize = Integer.parseInt(parsedargs.getOrDefault("--minsize", "150"));
         String earliestdatestring = parsedargs.get("--editsafter");
         String latestdatestring = parsedargs.get("--editsbefore");
@@ -160,9 +162,9 @@ public class ContributionSurveyor
 
         ContributionSurveyor surveyor = new ContributionSurveyor(homewiki);
         surveyor.setMinimumSizeDiff(minsize);
-        surveyor.setEarliestDateTime(editsafter);
-        surveyor.setLatestDateTime(editsbefore);
+        surveyor.setDateRange(editsafter, editsbefore);
         surveyor.setIgnoringMinorEdits(nominor);
+//        surveyor.setIgnoringReverts(noreverts);
         try (BufferedWriter outwriter = Files.newBufferedWriter(out))
         {
             outwriter.write(surveyor.massContributionSurvey(users, images, ns));
@@ -211,23 +213,59 @@ public class ContributionSurveyor
         return nominor;
     }
 
+    // Not effective until https://phabricator.wikimedia.org/T185809 is resolved
+    // and being able to get tags of revisions.
+    
+    /*
+     *  Sets whether surveys ignore reverts. Default = true.
+     *  @param ignorereverts (see above)
+     *  @see #isIgnoringReverts()
+     *  @see Revisions#removeReverts
+     *  @since 0.05
+     *
+    public void setIgnoringReverts(boolean ignorereverts)
+    {
+        noreverts = ignorereverts;
+    }
+    
+    /*
+     *  Gets whether surveys ignore reverts. Default = true.
+     *  @return (see above)
+     *  @see #setIgnoringReverts(boolean)
+     *  @see Revisions#removeReverts
+     *  @since 0.04
+     *
+    public boolean isIgnoringReverts()
+    {
+        return noreverts;
+    }
+    */
+
     /**
-     *  Sets the date/time at which surveys start; no edits will be returned
-     *  before then. Defaults to {@code null}, i.e. no lower bound.
+     *  Sets the dates/times at which surveys start and finish; no edits will be 
+     *  returned outside this range. The default, {@code null}, indicates no
+     *  bound.
      *  @param earliest the desired start date/time
-     *  @see #getEarliestDateTime()
+     *  @param latest the desired end date/time
+     *  @throws IllegalArgumentException if <var>earliest</var> is after
+     *  <var>latest</var>
+     *  @see #getEarliestDateTime() 
+     *  @see #getLatestDateTime() 
      *  @since 0.04
      */
-    public void setEarliestDateTime(OffsetDateTime earliest)
+    public void setDateRange(OffsetDateTime earliest, OffsetDateTime latest)
     {
+        if (earliest != null && latest != null && earliest.isAfter(latest))
+            throw new IllegalArgumentException("Date range is reversed.");
         earliestdate = earliest;
+        latestdate = latest;
     }
 
     /**
      *  Gets the date/time at which surveys start; no edits will be returned
      *  before then.
      *  @return (see above)
-     *  @see #setEarliestDateTime(OffsetDateTime)
+     *  @see #setDateRange(OffsetDateTime, OffsetDateTime)
      *  @since 0.04
      */
     public OffsetDateTime getEarliestDateTime()
@@ -236,21 +274,9 @@ public class ContributionSurveyor
     }
 
     /**
-     *  Sets the date/time at which surveys finish; no edits will be returned
-     *  after then. Defaults to {@code null}, i.e. when the survey is performed
-     *  @param latest the desired end date/time
-     *  @see #getLatestDateTime()
-     *  @since 0.04
-     */
-    public void setLatestDateTime(OffsetDateTime latest)
-    {
-        latestdate = latest;
-    }
-
-    /**
      *  Gets the date at which surveys finish.
      *  @return (see above)
-     *  @see #setLatestDateTime(OffsetDateTime)
+     *  @see #setDateRange(OffsetDateTime, OffsetDateTime)
      *  @since 0.04
      */
     public OffsetDateTime getLatestDateTime()
@@ -302,12 +328,18 @@ public class ContributionSurveyor
             options.put("minor", Boolean.FALSE);
         Wiki.RequestHelper rh = wiki.new RequestHelper()
             .inNamespaces(ns)
-            .withinDateRange(earliestdate, latestdate);
-        List<List<Wiki.Revision>> edits = wiki.contribs(users, null, rh, options);
+            .withinDateRange(earliestdate, latestdate)
+            .filterBy(options);
+        List<List<Wiki.Revision>> edits = wiki.contribs(users, null, rh);
         Map<String, Map<String, List<Wiki.Revision>>> ret = new LinkedHashMap<>();
         for (int i = 0; i < users.size(); i++)
         {
-            Map<String, List<Wiki.Revision>> results = edits.get(i).stream()
+            List<Wiki.Revision> useredits = edits.get(i);
+//            if (noreverts)
+//                useredits = Revisions.removeReverts(useredits);
+            Map<String, List<Wiki.Revision>> results = useredits.stream()
+            // RevisionDelete... should check for content AND no access, but with no SHA-1 that is impossible
+                .filter(rev -> !rev.isContentDeleted()) 
                 .filter(rev -> rev.getSizeDiff() >= minsizediff)
                 .sorted(Comparator.comparingInt(Wiki.Revision::getSizeDiff).reversed())
                 .collect(Collectors.groupingBy(Wiki.Revision::getTitle, LinkedHashMap::new, Collectors.toList()));
@@ -337,6 +369,8 @@ public class ContributionSurveyor
             .withinDateRange(earliestdate, latestdate)
             .inNamespaces(ns);
         List<Wiki.Revision> delcontribs = wiki.deletedContribs(username, rh);
+//        if (noreverts)
+//            delcontribs = Revisions.removeReverts(delcontribs);
         LinkedHashMap<String, List<Wiki.Revision>> ret = new LinkedHashMap<>();
 
         // group contributions by page
@@ -370,7 +404,7 @@ public class ContributionSurveyor
             localuploads.add(upload.getTitle());
 
         // fetch commons uploads
-        Wiki commons = Wiki.createInstance("commons.wikimedia.org");
+        Wiki commons = Wiki.newSession("commons.wikimedia.org");
         Wiki.User comuser = commons.getUser(user.getUsername());
         HashSet<String> comuploads = new HashSet<>(10000);
         if (comuser != null)
@@ -400,7 +434,7 @@ public class ContributionSurveyor
      *  @param username the relevant username (use {@code null} to omit)
      *  @param survey the survey, in form of page &#8594; edits
      *  @return the formatted survey in wikitext
-     *  @see #contributionSurvey(String[], int...)
+     *  @see #contributionSurvey(List, int...)
      *  @since 0.04
      */
     public String formatTextSurveyAsWikitext(String username, Map<String, List<Wiki.Revision>> survey)
@@ -563,7 +597,7 @@ public class ContributionSurveyor
     {
         StringBuilder out = new StringBuilder();
         Map<String, Map<String, List<Wiki.Revision>>> results = contributionSurvey(usernames, ns);
-        Wiki.User[] userinfo = wiki.getUsers(usernames.toArray(new String[0]));
+        List<Wiki.User> userinfo = wiki.getUsers(usernames);
 
         Iterator<Map.Entry<String, Map<String, List<Wiki.Revision>>>> iter = results.entrySet().iterator();
         int userindex = 0;
@@ -588,9 +622,9 @@ public class ContributionSurveyor
             out.append(formatTextSurveyAsWikitext(username, survey));
 
             // survey images
-            if (images && userinfo[userindex] != null)
+            if (images && userinfo.get(userindex) != null)
             {
-                String[][] imagesurvey = imageContributionSurvey(userinfo[userindex]);
+                String[][] imagesurvey = imageContributionSurvey(userinfo.get(userindex));
                 out.append(formatImageSurveyAsWikitext(username, imagesurvey));
             }
             out.append("\n");
@@ -607,7 +641,7 @@ public class ContributionSurveyor
      */
     public String generateWikitextFooter()
     {
-        OffsetDateTime now = OffsetDateTime.now(ZoneId.of("UTC"));
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return "\nThis report generated by [https://github.com/MER-C/wiki-java ContributionSurveyor.java] at "
             + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) + ".";
     }

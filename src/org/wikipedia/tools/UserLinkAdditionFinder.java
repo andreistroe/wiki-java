@@ -60,7 +60,7 @@ public class UserLinkAdditionFinder
             .addSection("If a file is not specified, a dialog box will prompt for one.")
             .parse(args);
 
-        WMFWiki thiswiki = WMFWiki.createInstance(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
+        WMFWiki thiswiki = WMFWiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
         boolean linksearch = parsedargs.containsKey("--linksearch");
         boolean removeblacklisted = parsedargs.containsKey("--removeblacklisted");
         String user = parsedargs.get("--user");
@@ -187,7 +187,7 @@ public class UserLinkAdditionFinder
             .inNamespaces(Wiki.MAIN_NAMESPACE)
             .withinDateRange(earliest, null);
         Map<Wiki.Revision, List<String>> results = new HashMap<>();
-        List<List<Wiki.Revision>> contribs = wiki.contribs(users, null, rh, null);
+        List<List<Wiki.Revision>> contribs = wiki.contribs(users, null, rh);
         List<Wiki.Revision> revisions = contribs.stream()
             .flatMap(List::stream)
             .filter(revision -> !revision.isContentDeleted())
