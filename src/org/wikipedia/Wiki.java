@@ -1048,7 +1048,7 @@ public class Wiki implements Comparable<Wiki>
 
         // user
         buffer.append(",user=");
-        buffer.append(user != null ? user.toString() : "null");
+        buffer.append(Objects.toString(user));
         buffer.append(",");
 
         // throttle mechanisms
@@ -2376,7 +2376,10 @@ public class Wiki implements Comparable<Wiki>
         // done
         checkErrorsAndUpdateStatus(response, "undelete");
         if (response.contains("cantundelete"))
+        {
             log(Level.WARNING, "undelete", "Can't undelete: " + title + " has no deleted revisions.");
+            return;
+        }
         log(Level.INFO, "undelete", "Successfully undeleted " + title);
         for (Revision rev : revisions)
             rev.pageDeleted = false;
@@ -6876,9 +6879,9 @@ public class Wiki implements Comparable<Wiki>
         {
             int hc = Long.hashCode(id);
             hc = 127 * hc + timestamp.hashCode();
-            hc = 127 * hc + (user == null ? 0 : user.hashCode());
-            hc = 127 * hc + (title == null ? 0 : title.hashCode());
-            hc = 127 * hc + (comment == null ? 0 : comment.hashCode());
+            hc = 127 * hc + Objects.hashCode(user);
+            hc = 127 * hc + Objects.hashCode(title);
+            hc = 127 * hc + Objects.hashCode(comment);
             return hc;
         }
 
@@ -7050,7 +7053,7 @@ public class Wiki implements Comparable<Wiki>
         {
             int hc = super.hashCode();
             hc = 127 * hc + type.hashCode();
-            hc = 127 * hc + (action == null ? 0 : action.hashCode());
+            hc = 127 * hc + Objects.hashCode(action);
             return hc;
         }
     }
@@ -8117,6 +8120,10 @@ public class Wiki implements Comparable<Wiki>
             }
         }
         while (tries != 0);
+    
+        // empty response from server
+        if (response.isEmpty())
+            throw new UnknownError("Received empty response from server!");
         if (response.contains("<error code="))
         {
             String error = parseAttribute(response, "code", 0);
@@ -8126,17 +8133,18 @@ public class Wiki implements Comparable<Wiki>
                 case "assertbotfailed":
                 case "assertuserfailed":
                     throw new AssertionError(description);
+                case "permissiondenied":
+                    throw new SecurityException(description);
                 // harmless, pass error to calling method
                 case "nosuchsection":     // getSectionText(), parse()
                 case "nosuchfromsection": // diff()
                 case "nosuchtosection":   // diff()
                 case "nosuchrevid":       // parse(), diff()
+                case "cantundelete":      // undelete(), page has no deleted revisions
                     break;
                 // Something *really* bad happened. Most of these are self-explanatory
                 // and are indicative of bugs (not necessarily in this framework) or
                 // can be avoided entirely.
-                case "permissiondenied":
-                    throw new SecurityException(description);
                 default:
                     throw new UnknownError("MW API error. Server response was: " + response);
             }
@@ -8261,11 +8269,9 @@ public class Wiki implements Comparable<Wiki>
             statuscounter++;
 
         // successful
-        if (line.contains("result=\"Success\""))
+        if (!line.contains("<error code=\""))
             return;
-        // empty response from server
-        if (line.isEmpty())
-            throw new UnknownError("Received empty response from server!");
+        // FIXME: this is never executed - makeApiCall munches errors before this
         String error = parseAttribute(line, "code", 0);
         switch (error)
         {
@@ -8286,8 +8292,6 @@ public class Wiki implements Comparable<Wiki>
             case "autoblocked":
                 log(Level.SEVERE, caller, "Cannot " + caller + " - user is blocked!.");
                 throw new AccountLockedException("Current user is blocked!");
-            default:
-                throw new IOException("MediaWiki error, response was " + line);
         }
     }
 

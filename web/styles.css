@@ -9,6 +9,64 @@ textarea { width: 700px }
 /* error messages */
 .error { color: red; font-size: 24pt }
 
+/* pagelinks */
+a { color: #0000bb }
+a.new { color: #bb0000 }
+
+/*
+ * Wikitable style taken from
+ * https://phabricator.wikimedia.org/diffusion/SVN/browse/trunk/phase3/skins/common/shared.css
+ */
+table.wikitable 
+{
+    margin: 1em 1em 1em 0;
+    background-color: #f9f9f9;
+    border: 1px #aaa solid;
+    border-collapse: collapse;
+    color: black;
+    width: 100%
+}
+table.wikitable > tr > th,
+table.wikitable > tr > td,
+table.wikitable > * > tr > th,
+table.wikitable > * > tr > td 
+{
+    border: 1px #aaa solid;
+    padding: 0.2em;
+}
+table.wikitable > tr > th,
+table.wikitable > * > tr > th
+{
+    background-color: #f2f2f2;
+    text-align: center;
+    font-size: 90%;
+}
+table.wikitable > caption
+{
+    font-weight: bold;
+}
+
+/* Data type table styles */
+td.boolean { text-align: center }
+td.difflink { width: 2.5em; }
+td.date { width: 9em; }
+td.flag { width: 1.3em; text-align: center; }
+td.title { width: 12em; }
+td.user { width: 12em; }
+td.revsize { width: 6em; text-align: right; }
+td.revsizediff { width: 3em; text-align: right; }
+
+/* 
+ * Styles for ParserUtils.revisionsToHTML() - note: rendered as a wikitable 
+ */
+tr.revision { font-size: 80%; }
+span.sizeincreased { color: #009900 }
+span.sizedecreased { color: #990000 }
+span.history-deleted { color: #888888; text-decoration: line-through }
+
+/* miscellaneous styles */
+.shaded { background-color: #eeeeee } 
+
 /* collapsibles */
 .collapsecontainer { border: 1px solid crimson }
 .collapseboxtop { display: block; background: #ffdddd; width: 100% }
@@ -17,11 +75,3 @@ textarea { width: 700px }
 .collapsed { display: none }
 .tocollapse { display: block }
 .notcollapsed { display: block }
-
-/* Styles for ParserUtils.revisionsToHTML() */
-ul.htmlrevisions { font-family: monospace; font-size: 120% }
-li.shaded { background-color: #eeeeee }
-span.sizeincreased { color: #009900 }
-span.sizedecreased { color: #990000 }
-span.history-deleted { color: #888888; text-decoration: line-through }
-a.pagename { color: #0066aa }

@@ -22,7 +22,7 @@
 
     String user = request.getParameter("user");
     String homewiki = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
-    Wiki wiki = Wiki.createInstance(homewiki);
+    Wiki wiki = Wiki.newSession(homewiki);
 
     ContributionSurveyor surveyor = new ContributionSurveyor(wiki);
     String[][] survey = null;
@@ -33,10 +33,7 @@
         {
             // get results
             request.setAttribute("contenttype", "text");
-            if (!earliest.isEmpty())
-                surveyor.setEarliestDateTime(earliest_odt);
-            if (!latest.isEmpty())
-                surveyor.setLatestDateTime(latest_odt);
+            surveyor.setDateRange(earliest_odt, latest_odt);
             survey = surveyor.imageContributionSurvey(wpuser);
         }
     }

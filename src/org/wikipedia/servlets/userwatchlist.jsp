@@ -25,11 +25,12 @@
     skip = Math.max(skip, 0);
     boolean newonly = (request.getParameter("newonly") != null);
 
-    Wiki enWiki = Wiki.createInstance("en.wikipedia.org");
+    Wiki enWiki = Wiki.newSession("en.wikipedia.org");
     enWiki.setMaxLag(-1);
     enWiki.setQueryLimit(30000); // 60 network requests
     Users userUtils = Users.of(enWiki);
     Revisions revisionUtils = Revisions.of(enWiki);
+    Pages pageUtils = Pages.of(enWiki);
 %>
 
 <%@ include file="datevalidate.jspf" %>
@@ -57,8 +58,8 @@ Someone # Spam
         <%
         if (inputpage != null)
         {
+            out.print("(" + pageUtils.generatePageLink(inputpage, "visit") + " &middot; ");
         %>
-        (<a href="<%= enWiki.getPageUrl(inputpage) %>">visit</a> |
         <a href="<%= enWiki.getIndexPhpUrl() + "?action=edit&title=" + inputpage_url %>">edit</a>)
         <%
         }
@@ -151,14 +152,7 @@ Someone # Spam
     String requesturl = "./userwatchlist.jsp?page=" +  inputpage_url + "&earliest=" + earliest
         + "&latest=" + latest + "&skip=";
     out.println("<hr>");
-    if (skip > 0)
-        out.print("<a href=\"" + requesturl + Math.max(0, skip - 50) + "\">Previous 50</a> | ");
-    else
-        out.print("Previous 50 | ");
-    if (input.size() - skip > 50)
-        out.println("<a href=\"" + requesturl + (skip + 50) + "\">Next 50</a>");
-    else
-        out.println("Next 50");
+    out.println(ServletUtils.generatePagination(requesturl, skip, 50, input.size()));
 
     // fetch contributions
     Wiki.RequestHelper rh = enWiki.new RequestHelper()
@@ -198,14 +192,6 @@ Someone # Spam
     }
 
     // end pagination
-    out.println("<p>");
-    if (skip > 0)
-        out.print("<a href=\"" + requesturl + Math.max(0, skip - 50) + "\">Previous 50</a> | ");
-    else
-        out.print("Previous 50 | ");
-    if (input.size() - skip > 50)
-        out.println("<a href=\"" + requesturl + (skip + 50) + "\">Next 50</a>");
-    else
-        out.println("Next 50");
+    out.println(ServletUtils.generatePagination(requesturl, skip, 50, input.size()));
 %>
 <%@ include file="footer.jsp" %>
