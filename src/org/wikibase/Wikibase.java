@@ -574,7 +574,10 @@ public class Wikibase extends Wiki {
     }
 
     public List<Map<String, Object>> query(String queryString) throws IOException, WikibaseException {
+        throttle();
+        
         URL queryService = new URL(queryServiceUrl);
+        logurl(queryServiceUrl, "query");
         HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
         queryServiceConnection.setDoOutput(true);
         queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
@@ -588,6 +591,7 @@ public class Wikibase extends Wiki {
             out.writeBytes(buildParameterString(parameters));
             out.flush();
         }
+        log(Level.INFO, "query", "Query string: " + buildParameterString(parameters));
 
         int status = queryServiceConnection.getResponseCode();
         if (status > 299) {
