@@ -61,7 +61,6 @@ import org.wikipedia.Wiki;
 public class Wikibase extends Wiki {
     private String queryServiceUrl = "https://query.wikidata.org/sparql";
     private long queryRetryTime = System.currentTimeMillis();
-    private long lastQueryTime = -1l;
 
     public Wikibase(String url, String queryServiceUrl) {
         this(url);
@@ -582,12 +581,13 @@ public class Wikibase extends Wiki {
     public List<Map<String, Object>> query(String queryString) throws IOException, WikibaseException {
         long now = System.currentTimeMillis();
         if (0 < queryRetryTime) {
-            now = System.currentTimeMillis();
             while (queryRetryTime > now) {
+                log(Level.INFO, "query", String.format("Waiting %d ms until %d...", queryRetryTime - now, queryRetryTime));
                 try {
                     Thread.sleep(10000l);
                 } catch (InterruptedException e) {
                 }
+                now = System.currentTimeMillis();
             }
         }
         
@@ -596,6 +596,7 @@ public class Wikibase extends Wiki {
         HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
         queryServiceConnection.setDoOutput(true);
         //queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
+        queryServiceConnection.setRequestProperty("User-Agent", "Wikibase.java/0.36/ https://github.com/andreistroe/wiki-java");
 
         Map<String, String> parameters = new HashMap<>();
         parameters.put("format", "xml");
@@ -628,6 +629,7 @@ public class Wikibase extends Wiki {
                     content.append(inLine).append('\n');
                 }
             }
+            queryRetryTime = now + 70000l;
             throw new WikibaseException(content.toString());
         } else {
             StringBuilder content = new StringBuilder();
@@ -678,6 +680,7 @@ public class Wikibase extends Wiki {
                         eachResult = eachResult.getNextSibling();
                     }
                 }
+                queryRetryTime = now + 70000l;
                 return resultList;
             } catch (Exception e) {
                 throw new WikibaseException(String.format("Error running query %s", queryString), e);
