@@ -23,13 +23,17 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
@@ -56,6 +60,8 @@ import org.wikipedia.Wiki;
 
 public class Wikibase extends Wiki {
     private String queryServiceUrl = "https://query.wikidata.org/sparql";
+    private long queryRetryTime = System.currentTimeMillis();
+    private long lastQueryTime = -1l;
 
     public Wikibase(String url, String queryServiceUrl) {
         this(url);
@@ -574,13 +580,22 @@ public class Wikibase extends Wiki {
     }
 
     public List<Map<String, Object>> query(String queryString) throws IOException, WikibaseException {
-        throttle();
+        long now = System.currentTimeMillis();
+        if (0 < queryRetryTime) {
+            now = System.currentTimeMillis();
+            while (queryRetryTime > now) {
+                try {
+                    Thread.sleep(10000l);
+                } catch (InterruptedException e) {
+                }
+            }
+        }
         
         URL queryService = new URL(queryServiceUrl);
         logurl(queryServiceUrl, "query");
         HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
         queryServiceConnection.setDoOutput(true);
-        queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
+        //queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
 
         Map<String, String> parameters = new HashMap<>();
         parameters.put("format", "xml");
@@ -594,7 +609,17 @@ public class Wikibase extends Wiki {
         log(Level.INFO, "query", "Query string: " + buildParameterString(parameters));
 
         int status = queryServiceConnection.getResponseCode();
-        if (status > 299) {
+        if (429 == status) {
+            String retryAfter = queryServiceConnection.getHeaderField("Retry-After");
+            if (null != retryAfter && retryAfter.matches("\\d+")) {
+                long throttleTime = Long.parseLong(retryAfter);
+                queryRetryTime += throttleTime * 1000l;
+            } else if (null != retryAfter) {
+                ZonedDateTime zdt = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME);
+                queryRetryTime = zdt.toEpochSecond();
+            }
+            throw new WikibaseException(String.format("Server too busy. Next allowed retry in %s", retryAfter));
+        } else if (status > 299) {
             StringBuilder content = new StringBuilder();
             try (
                 BufferedReader reader = new BufferedReader(new InputStreamReader(queryServiceConnection.getErrorStream()))) {
