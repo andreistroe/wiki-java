@@ -18,14 +18,13 @@ package org.wikibase;
 
 import java.math.BigInteger;
 import java.net.URL;
+import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.xml.bind.DatatypeConverter;
 
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -237,7 +236,8 @@ public class WikibaseClaimFactory {
                                     }
                                     
                                 } else {
-                                    Calendar cal = DatatypeConverter.parseDateTime(iso8601time.substring(1));
+                                    ZonedDateTime zdt = ZonedDateTime.parse(iso8601time.substring(1));
+                                    Calendar cal = GregorianCalendar.from(zdt);
                                     if (iso8601time.startsWith("-")) {
                                         cal.set(Calendar.ERA, GregorianCalendar.BC);
                                     }
