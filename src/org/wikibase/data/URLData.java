@@ -16,21 +16,21 @@
 */
 package org.wikibase.data;
 
-import java.net.URL;
+import java.net.URI;
 
 public class URLData extends WikibaseData {
-    private URL url;
+    private URI url;
 
-    public URLData(URL url) {
+    public URLData(URI url) {
         super();
         this.url = url;
     }
 
-    public URL getUrl() {
+    public URI getUrl() {
         return url;
     }
 
-    public void setUrl(URL url) {
+    public void setUrl(URI url) {
         this.url = url;
     }
 

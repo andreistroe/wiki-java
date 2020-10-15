@@ -17,6 +17,7 @@
 package org.wikibase;
 
 import java.math.BigInteger;
+import java.net.URI;
 import java.net.URL;
 import java.time.ZonedDateTime;
 import java.util.Calendar;
@@ -170,7 +171,7 @@ public class WikibaseClaimFactory {
                 if ("datavalue".equalsIgnoreCase(datavalueNode.getNodeName())) {
                     try {
                         String urlValue = datavalueNode.getAttributes().getNamedItem("value").getNodeValue();
-                        snak.setData(new URLData(new URL(urlValue)));
+                        snak.setData(new URLData(new URI(urlValue)));
                     } catch (Exception e) {
                         throw new WikibaseException(e);
                     }
@@ -232,6 +233,9 @@ public class WikibaseClaimFactory {
                                         cal.set(Calendar.DAY_OF_MONTH, 0);
                                         cal.set(Calendar.MONTH, Integer.parseInt(monthStr) - 1);
                                         cal.set(Calendar.YEAR, Integer.parseInt(yearStr));
+                                        if ("-".equals(yearSignum)) {
+                                            cal.set(Calendar.ERA, GregorianCalendar.BC);
+                                        }
                                         time.setCalendar(cal);
                                     }
                                     

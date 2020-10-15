@@ -48,9 +48,10 @@ public class LanguageString extends WikibaseData {
         return "monolingualtext";
     }
     
+    @Override
     public String valueToJSON() {
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"text\":\"").append(text).append('\"');
+        sb.append("\"text\":\"").append(text.replaceAll("\\\"", "\\\\\"")).append('\"');
         sb.append(',');
         sb.append("\"language\":\"").append(language).append('\"');
         sb.append('}');
