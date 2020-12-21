@@ -19,6 +19,9 @@ package org.wikibase;
 import java.math.BigInteger;
 import java.net.URI;
 import java.net.URL;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
@@ -226,26 +229,14 @@ public class WikibaseClaimFactory {
                                         String yearStr = yearMonthMatcher.group(2);
                                         String yearSignum = yearMonthMatcher.group(1);
                                         String monthStr = yearMonthMatcher.group(3);
-                                        Calendar cal = GregorianCalendar.getInstance();
-                                        cal.set(Calendar.SECOND, 0);
-                                        cal.set(Calendar.MINUTE, 0);
-                                        cal.set(Calendar.HOUR, 0);
-                                        cal.set(Calendar.DAY_OF_MONTH, 0);
-                                        cal.set(Calendar.MONTH, Integer.parseInt(monthStr) - 1);
-                                        cal.set(Calendar.YEAR, Integer.parseInt(yearStr));
-                                        if ("-".equals(yearSignum)) {
-                                            cal.set(Calendar.ERA, GregorianCalendar.BC);
-                                        }
-                                        time.setCalendar(cal);
+                                        int year = Integer.parseInt(yearStr);
+                                        year = "-".equals(yearSignum) ? -year : year;
+                                        time.setYearMonth(YearMonth.of(year, Integer.parseInt(monthStr)));
                                     }
-                                    
+
                                 } else {
-                                    ZonedDateTime zdt = ZonedDateTime.parse(iso8601time.substring(1));
-                                    Calendar cal = GregorianCalendar.from(zdt);
-                                    if (iso8601time.startsWith("-")) {
-                                        cal.set(Calendar.ERA, GregorianCalendar.BC);
-                                    }
-                                    time.setCalendar(cal);
+                                    LocalDate date = LocalDate.parse(iso8601time.substring(1, iso8601time.indexOf('T')));
+                                    time.setDate(date);
                                 }
                                 time.setBefore(
                                     Integer.parseInt(valueNode.getAttributes().getNamedItem("before").getNodeValue()));
@@ -302,8 +293,9 @@ public class WikibaseClaimFactory {
                     while (null != valueNode) {
                         if ("value".equalsIgnoreCase(valueNode.getNodeName())) {
                             Quantity qty = new Quantity();
-                            qty.setAmount(Double.parseDouble(valueNode.getAttributes().getNamedItem("amount").getNodeValue()));
-                            if (null != valueNode.getAttributes().getNamedItem("upperBound")) { 
+                            qty.setAmount(
+                                Double.parseDouble(valueNode.getAttributes().getNamedItem("amount").getNodeValue()));
+                            if (null != valueNode.getAttributes().getNamedItem("upperBound")) {
                                 qty.setUpperBound(
                                     Double.parseDouble(valueNode.getAttributes().getNamedItem("upperBound").getNodeValue()));
                             }

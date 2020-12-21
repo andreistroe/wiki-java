@@ -19,21 +19,49 @@ package org.wikibase.data;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.YearMonth;
+import java.time.chrono.IsoEra;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 
 public class Time extends WikibaseData {
-    private Calendar calendar;
     private int before;
     private int after;
     private int precision;
     private int timezone = 0;
+    private YearMonth yearMonth = null;
+    private LocalDate date;
+    private LocalTime localTime;
+
+    public YearMonth getYearMonth() {
+        return yearMonth;
+    }
+
+    public void setYearMonth(YearMonth yearMonth) {
+        this.yearMonth = yearMonth;
+    }
+
+    public LocalDate getDate() {
+        return date;
+    }
+
+    public void setDate(LocalDate date) {
+        this.date = date;
+    }
+
+    public LocalTime getLocalTime() {
+        return localTime;
+    }
+
+    public void setLocalTime(LocalTime localTime) {
+        this.localTime = localTime;
+    }
+
     private URL calendarModel;
+
     public Time() {
         super();
         try {
@@ -45,17 +73,9 @@ public class Time extends WikibaseData {
 
     private long year;
 
-    public Calendar getCalendar() {
-        return calendar;
-    }
-
     @Override
     public String getDatatype() {
         return "time";
-    }
-
-    public void setCalendar(Calendar calendar) {
-        this.calendar = calendar;
     }
 
     public int getBefore() {
@@ -114,13 +134,12 @@ public class Time extends WikibaseData {
             "$100,000 years", // precision: hundred thousand years
             "$10,000 years", // precision: ten thousand years
         };
-        Map<Integer, DateFormat> dateformats = new HashMap<Integer, DateFormat>() {
+        Map<Integer, DateTimeFormatter> dateformats = new HashMap<Integer, DateTimeFormatter>() {
             {
-                put(10, new SimpleDateFormat("MMMM y G", Locale.ENGLISH));
-                put(11, new SimpleDateFormat("d MMMM y G", Locale.ENGLISH));
-                put(12, new SimpleDateFormat("d MMMM y G HH 'hours' Z", Locale.ENGLISH));
-                put(13, new SimpleDateFormat("d MMMM y G HH:mm Z", Locale.ENGLISH));
-                put(14, new SimpleDateFormat("d MMMM y G HH:mm:ss Z", Locale.ENGLISH));
+                put(11, DateTimeFormatter.ofPattern("d MMMM y G"));
+                put(12, DateTimeFormatter.ofPattern("d MMMM y G HH 'hours' Z"));
+                put(13, DateTimeFormatter.ofPattern("d MMMM y G HH:mm Z"));
+                put(14, DateTimeFormatter.ofPattern("d MMMM y G HH:mm:ss Z"));
             }
         };
         if (5 >= precision) {
@@ -133,13 +152,14 @@ public class Time extends WikibaseData {
             return String.format(patternsForOldYears[precision], y2);
         }
         String era = "";
-        if (null != calendar) {
-            if (calendar.get(Calendar.ERA) == GregorianCalendar.BC || year < 1000l) {
-                era = (calendar.get(Calendar.ERA) == GregorianCalendar.BC || year < 0l) ? " BC" : " AD";
-            } else {
-                if (year < 1000l) {
-                    era = year < 0l ? " BC" : " AD";
-                }
+        if (null != date) {
+            era = date.getEra() == IsoEra.BCE ? " BC" : " AD";
+        } else {
+            if (null != yearMonth) {
+                year = yearMonth.getYear();
+            }
+            if (year < 1000l) {
+                era = year < 0l ? " BC" : " AD";
             }
         }
 
@@ -164,8 +184,11 @@ public class Time extends WikibaseData {
             builder.append(year);
             builder.append(era);
             break;
+        case 10:
+            builder.append(yearMonth.format(DateTimeFormatter.ofPattern("MMMM y G")));
+            break;
         default:
-            builder.append(dateformats.get(precision).format(calendar.getTime()));
+            builder.append(date.format(dateformats.get(precision)));
 
         }
         return builder.toString();
@@ -174,7 +197,7 @@ public class Time extends WikibaseData {
     @Override
     public String valueToJSON() {
         StringBuilder sbuild = new StringBuilder("{");
-        SimpleDateFormat isoFormatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mmZ");
+        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mmZ");
 
         sbuild.append("\"precision\":").append(precision);
         sbuild.append(',');
@@ -186,9 +209,13 @@ public class Time extends WikibaseData {
         sbuild.append(',');
 
         sbuild.append("\"time\":\"");
-        if (precision > 9) {
-            sbuild.append(calendar.get(Calendar.ERA) == GregorianCalendar.BC ? '-' : '+')
-                .append(isoFormatter.format(calendar.getTime()));
+        if (precision > 10) {
+            sbuild.append(date.getEra() == IsoEra.BCE ? '-' : '+')
+                .append(date.format(isoFormatter));
+        } else if (precision == 10) {
+            sbuild.append(yearMonth.getYear() < 0 ? '-' : '+')
+                .append(yearMonth.format(DateTimeFormatter.ofPattern("yyyy-MM")))
+                .append("-00T00:00:00Z");
         } else {
             sbuild.append(year >= 0l ? "+" : "").append(year).append("-00-00T00:00:00Z");
         }
