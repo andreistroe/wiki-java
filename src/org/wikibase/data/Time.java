@@ -119,7 +119,7 @@ public class Time extends WikibaseData {
     }
 
     public long getYear() {
-        return year;
+        return precision < 10 ? year : precision == 10 ? yearMonth.getYear() : date.getYear();
     }
 
     public void setYear(long year) {
