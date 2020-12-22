@@ -198,6 +198,7 @@ public class Time extends WikibaseData {
     public String valueToJSON() {
         StringBuilder sbuild = new StringBuilder("{");
         DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mmZ");
+        DateTimeFormatter noHourIsoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
         sbuild.append("\"precision\":").append(precision);
         sbuild.append(',');
@@ -211,7 +212,8 @@ public class Time extends WikibaseData {
         sbuild.append("\"time\":\"");
         if (precision > 10) {
             sbuild.append(date.getEra() == IsoEra.BCE ? '-' : '+')
-                .append(date.format(isoFormatter));
+                .append(date.format(noHourIsoFormatter))
+                .append("T00:00:00Z");
         } else if (precision == 10) {
             sbuild.append(yearMonth.getYear() < 0 ? '-' : '+')
                 .append(yearMonth.format(DateTimeFormatter.ofPattern("yyyy-MM")))
