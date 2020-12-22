@@ -196,15 +196,15 @@ public class Claim {
         sbuild.append(',');
         sbuild.append("\"rank\":\"").append((null != rank ? rank : Rank.NORMAL).toString()).append("\"");
 
-        sbuild.append(',');
-        if (0 < references.size()) {
+        if (!references.isEmpty()) {
+            sbuild.append(','); 
             sbuild.append("\"references\": [");
             boolean first = true;
-            sbuild.append('{').append("\"snaks\":");
             for (Set<Snak> ref : references) {
                 if (!first) {
                     sbuild.append(',');
                 }
+                sbuild.append('{').append("\"snaks\":");
                 first = false;
                 sbuild.append('{');
                 boolean firstSnak = true;
@@ -219,8 +219,8 @@ public class Claim {
                     sbuild.append(']');
                 }
                 sbuild.append('}');
+                sbuild.append('}');
             }
-            sbuild.append('}');
             sbuild.append("]");
         }
         sbuild.append('}');
