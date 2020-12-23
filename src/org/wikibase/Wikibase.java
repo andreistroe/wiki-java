@@ -25,15 +25,12 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Date;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
@@ -42,12 +39,16 @@ import java.util.regex.Pattern;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
+import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 
+import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.wikibase.data.Claim;
@@ -57,6 +58,7 @@ import org.wikibase.data.Property;
 import org.wikibase.data.Snak;
 import org.wikibase.data.WikibaseData;
 import org.wikipedia.Wiki;
+import org.xml.sax.SAXException;
 
 public class Wikibase extends Wiki {
     private String queryServiceUrl = "https://query.wikidata.org/sparql";
@@ -590,13 +592,14 @@ public class Wikibase extends Wiki {
                 now = System.currentTimeMillis();
             }
         }
-        
+
         URL queryService = new URL(queryServiceUrl);
         logurl(queryServiceUrl, "query");
         HttpURLConnection queryServiceConnection = (HttpURLConnection) queryService.openConnection();
         queryServiceConnection.setDoOutput(true);
-        //queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
-        queryServiceConnection.setRequestProperty("User-Agent", "Wikibase.java/0.36/ https://github.com/andreistroe/wiki-java");
+        // queryServiceConnection.setRequestProperty("Accept", "application/sparql-results+xml");
+        queryServiceConnection.setRequestProperty("User-Agent",
+            "Wikibase.java/0.36/ https://github.com/andreistroe/wiki-java");
 
         Map<String, String> parameters = new HashMap<>();
         parameters.put("format", "xml");
@@ -701,6 +704,95 @@ public class Wikibase extends Wiki {
 
         String resultString = result.toString();
         return resultString.length() > 0 ? resultString.substring(0, resultString.length() - 1) : resultString;
+    }
+
+    /**
+     * Search an entity by a string. It will return a list of possible entity matches that only contain the ID, the label and
+     * description. The label and the descriptions are the only things present in the language list, under the key of the
+     * language specified when searching.
+     * 
+     * @param searchString
+     * @param lang
+     * @return
+     * @throws IOException
+     * @throws WikibaseException
+     */
+    public List<Entity> searchWikibase(final String searchString, final String lang) throws IOException, WikibaseException {
+
+        HashMap<String, String> getParams = new HashMap<>();
+        HashMap<String, Object> postParams = new HashMap<>();
+        getParams.put("action", "wbsearchentities");
+        getParams.put("search", searchString);
+        getParams.put("language", lang);
+        getParams.put("format", "json");
+
+        final String text = makeApiCall(getParams, postParams, "searchWikibase");
+
+        List<Entity> ret;
+        try {
+            DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
+            Document document = builder.parse(new ByteArrayInputStream(text.getBytes()));
+
+            XPathFactory xpathFactory = XPathFactory.newInstance();
+            XPath xPath = xpathFactory.newXPath();
+            XPathExpression apiExpression = xPath.compile("/api[1]");
+
+            Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
+
+            if (null == apiNode) {
+                throw new WikibaseException("API root node not found in text.");
+            }
+
+            NamedNodeMap apiAttrs = apiNode.getAttributes();
+            Node successAttr = apiAttrs.getNamedItem("success");
+            String successStatus = successAttr.getTextContent();
+            if (!"1".equals(successStatus)) {
+                throw new WikibaseException("API call unsuccessful.");
+            }
+
+            Node entitiesNode = null;
+            Node eachApiChild = apiNode.getFirstChild();
+            while (null != eachApiChild) {
+                if ("search".equals(eachApiChild.getNodeName())) {
+                    entitiesNode = eachApiChild;
+                    break;
+                }
+                eachApiChild = eachApiChild.getNextSibling();
+            }
+
+            if (null == entitiesNode) {
+                throw new WikibaseException("Wikibase search node not found.");
+            }
+            Node presumptiveEntityNode = entitiesNode.getFirstChild();
+            Node entityNode = null;
+            ret = new ArrayList<>();
+            while (null != presumptiveEntityNode) {
+                if (!"entity".equals(presumptiveEntityNode.getNodeName())) {
+                    continue;
+                }
+                entityNode = presumptiveEntityNode;
+
+                // parse entity attrs
+                NamedNodeMap entityAttrs = entityNode.getAttributes();
+                Node missingAttr = entityAttrs.getNamedItem("missing");
+                if (null != missingAttr && null != missingAttr.getNodeValue()) {
+                    continue;
+                }
+                String itemId = entityAttrs.getNamedItem("id").getNodeValue();
+                Entity entity = new Entity(itemId);
+                entity.addLabel(lang, entityAttrs.getNamedItem("label").getNodeValue());
+                entity.addDescription(lang, entityAttrs.getNamedItem("description").getNodeValue());
+                ret.add(entity);
+
+                presumptiveEntityNode = presumptiveEntityNode.getNextSibling();
+            }
+            return ret;
+        } catch (XPathExpressionException | DOMException | ParserConfigurationException | SAXException | IOException
+            | WikibaseException e) {
+            e.printStackTrace();
+        }
+        return Collections.emptyList();
     }
 
 }
