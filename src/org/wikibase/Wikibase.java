@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
 import java.util.logging.Level;
@@ -782,7 +783,7 @@ public class Wikibase extends Wiki {
                 String itemId = entityAttrs.getNamedItem("id").getNodeValue();
                 Entity entity = new Entity(itemId);
                 entity.addLabel(lang, entityAttrs.getNamedItem("label").getNodeValue());
-                entity.addDescription(lang, entityAttrs.getNamedItem("description").getNodeValue());
+                entity.addDescription(lang, Optional.ofNullable(entityAttrs.getNamedItem("description")).map(Node::getNodeValue).orElse(null));
                 ret.add(entity);
 
                 presumptiveEntityNode = presumptiveEntityNode.getNextSibling();
