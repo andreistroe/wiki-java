@@ -44,7 +44,7 @@ public class CommonsMedia extends WikibaseData {
 
     @Override
     public String valueToJSON() {
-        return "\"" + fileName + "\"";
+        return "\"" + fileName.replaceAll("\"", "\\\\\"") + "\"";
     }
 
     @Override
