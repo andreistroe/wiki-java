@@ -171,7 +171,7 @@ public class Wikibase extends Wiki {
      * @throws IOException
      */
     public void linkPages(final String fromsite, final String fromtitle, final String tosite, final String totitle)
-        throws IOException {
+        throws IOException, WikibaseException {
         Map<String, String> getParams1 = new HashMap<>();
         Map<String, Object> postParams1 = new HashMap<>();
         getParams1.put("action", "wbgetentities");
@@ -200,29 +200,7 @@ public class Wikibase extends Wiki {
             return;
         }
 
-        Map<String, String> getParamsToken = new HashMap<>();
-        getParamsToken.put("prop", "info");
-        getParamsToken.put("intoken", "edit");
-        getParamsToken.put("titles", q);
-        getParamsToken.put("format", "xml");
-        String res = makeApiCall(getParamsToken, new HashMap<>(), "linkPages");
-
-        final int pagestartindex = res.indexOf("<page ");
-        final int pageendindex = res.indexOf(">", pagestartindex);
-        final String pageTag = res.substring(pagestartindex, pageendindex);
-
-        String edittoken = null;
-        final StringTokenizer pageTok = new StringTokenizer(pageTag, " ", false);
-        while (pageTok.hasMoreTokens()) {
-            final String pageAttr = pageTok.nextToken();
-            if (!pageAttr.contains("=")) {
-                continue;
-            }
-            final String[] entityParts = pageAttr.split("=");
-            if (entityParts[0].trim().startsWith("edittoken")) {
-                edittoken = entityParts[1].trim().replace("\"", "");
-            }
-        }
+        String edittoken = obtainToken();
 
         HashMap<String, String> getParams = new HashMap<>();
         HashMap<String, Object> postParams = new HashMap<>();
@@ -231,11 +209,35 @@ public class Wikibase extends Wiki {
         postParams.put("fromtitle", fromtitle);
         postParams.put("fromsite", fromsite);
         postParams.put("token", edittoken);
-        postParams.put("format", "xmlfm");
+        postParams.put("format", "xml");
 
         getParams.put("action", "wblinktitles");
 
-        res = makeApiCall(getParams, postParams, "linkPages");
+        String res = makeApiCall(getParams, postParams, "linkPages");
+        
+        DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
+        try {
+            DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
+            Document document = builder.parse(new ByteArrayInputStream(res.getBytes()));
+            XPathFactory xpathFactory = XPathFactory.newInstance();
+            XPath xPath = xpathFactory.newXPath();
+            XPathExpression apiExpression = xPath.compile("/api[1]");
+            Node apiNode = (Node) apiExpression.evaluate(document, XPathConstants.NODE);
+            if (null == apiNode || null == apiNode.getAttributes()
+                || null == apiNode.getAttributes().getNamedItem("success")) {
+                throw new WikibaseException("API root node with success parameter not found in text.");
+            }
+            if (!"1".equals(apiNode.getAttributes().getNamedItem("success").getNodeValue())) {
+                XPathExpression errorExpression = xPath.compile("/api[1]/error[1]");
+                Node errorNode = (Node) errorExpression.evaluate(document, XPathConstants.NODE);
+                if (null != errorNode && null != errorNode.getAttributes()
+                    && null != errorNode.getAttributes().getNamedItem("info")) {
+                    throw new WikibaseException(errorNode.getAttributes().getNamedItem("info").getNodeValue());
+                }
+            }
+        } catch (Exception e) {
+            log(Level.WARNING, "linkPages", e.getMessage());
+        }
     }
 
     public String createItem(Entity createdEntity) throws IOException, WikibaseException {
