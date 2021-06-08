@@ -19,6 +19,8 @@ package org.wikibase;
 import java.math.BigInteger;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
@@ -174,7 +176,10 @@ public class WikibaseClaimFactory {
                 if ("datavalue".equalsIgnoreCase(datavalueNode.getNodeName())) {
                     try {
                         String urlValue = datavalueNode.getAttributes().getNamedItem("value").getNodeValue();
-                        snak.setData(new URLData(new URI(urlValue)));
+                        String decUrlValue = URLDecoder.decode(urlValue, StandardCharsets.UTF_8.name());
+                        URL decUrl = new URL(decUrlValue);
+                        URI uri = new URI(decUrl.getProtocol(), decUrl.getUserInfo(), decUrl.getHost(), decUrl.getPort(), decUrl.getPath(), decUrl.getQuery(), decUrl.getRef());
+                        snak.setData(new URLData(uri));
                     } catch (Exception e) {
                         throw new WikibaseException(e);
                     }
