@@ -53,23 +53,34 @@ public class FeaturedPictureCuration
             .addBooleanFlag("--checktags", "Check whether FPs are tagged correctly (en.wp ONLY).")
             .addBooleanFlag("--checkusage", "Checks whether FPs are used in articles (en.wp or commons ONLY).")
             .addSingleArgumentFlag("--checknoms", "April 2019", "Checks whether all FPCs for a given month have been transcluded (en.wp ONLY)")
-            .addSingleArgumentFlag("--wiki", "example.org", "Fetch FPs from this wiki (see --checkusage).")
+            .addSingleArgumentFlag("--wiki", "example.org", "Fetch FPs from this wiki (see --checkusage), default en.wikipedia.org.")
             .parse(args);
         
         if (parsedargs.containsKey("--checktags"))
             checkFPTags();
         if (parsedargs.containsKey("--checkusage"))
         {
-            Wiki wiki = Wiki.newSession(parsedargs.get("--wiki"));
+            if (!parsedargs.containsKey("--wiki"))
+                System.err.println("WARNING: No wiki specified, defaulting to en.wikipedia.org.");
+            Wiki wiki = Wiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
             Set<String> fpcanonical = getFeaturedPicturesFromList(wiki);
             
-            // There is a small amount of contamination of non-featured pictures
-            // on Commons.
+            // NOTE 1: API imageusage does not take into account file redirects
+            // therefore usage is always <= the real usage. File redirects should 
+            // be bypassed by editing the wiki.
+            // NOTE 2: There is a small amount of contamination of non-featured 
+            // pictures on Commons.
+            List<String> fps = new ArrayList<>(fpcanonical);
+            List<Map<String, Object>> metadata = enWiki.getFileMetadata(fps);
             enWiki.setQueryLimit(100);
-            for (String image : fpcanonical)
+            for (int i = 0; i < fps.size(); i++)
             {
-                String[] usage = enWiki.imageUsage(image, Wiki.MAIN_NAMESPACE);
-                System.out.println("\"" + image + "\"," + usage.length + ",\"" + Arrays.toString(usage));
+                String image = fps.get(i);
+                Map<String, Object> data = metadata.get(i);
+                List<String> usage = enWiki.imageUsage(image, Wiki.MAIN_NAMESPACE);
+                System.out.println(String.join(",", List.of(image, String.valueOf(data.get("mime")),
+                    String.valueOf(data.get("width")), String.valueOf(data.get("height")), 
+                    String.valueOf(usage.size()), "\"" + String.join(",", usage) + "\"")));
             }
         }
         if (parsedargs.containsKey("--checknoms"))
@@ -127,15 +138,18 @@ public class FeaturedPictureCuration
         List<String> allfppages = new ArrayList<>();
         String domain = wiki.getDomain();
         if (domain.equals("en.wikipedia.org"))
-            allfppages.addAll(Arrays.asList(wiki.getCategoryMembers("Category:Wikipedia featured pictures categories")));
+            allfppages.addAll(wiki.getCategoryMembers("Category:Wikipedia featured pictures categories"));
         else if (domain.equals("commons.wikimedia.org"))
-            allfppages.addAll(Arrays.asList(wiki.getCategoryMembers("Category:Featured picture galleries")));
+            allfppages.addAll(wiki.getCategoryMembers("Category:Featured picture galleries"));
         else
             return Collections.emptySet();
 
         Set<String> fps = new HashSet<>();
+        boolean temp = wiki.isResolvingRedirects();
+        wiki.setResolveRedirects(true);
         for (List<String> fpimages : wiki.getImagesOnPage(allfppages))
             fps.addAll(fpimages);
+        wiki.setResolveRedirects(temp);
         return fps;
     }
     
@@ -147,7 +161,7 @@ public class FeaturedPictureCuration
     public static void checkFPTags() throws IOException
     {
         Set<String> fpcanonical = getFeaturedPicturesFromList(enWiki);
-        List<String> fpcat = Arrays.asList(enWiki.getCategoryMembers("Category:Featured pictures", Wiki.FILE_NAMESPACE));
+        List<String> fpcat = enWiki.getCategoryMembers("Category:Featured pictures", Wiki.FILE_NAMESPACE);
         
         // check for FPs that are no longer tagged as such
         List<String> missingfps = new ArrayList(fpcanonical);
@@ -172,15 +186,16 @@ public class FeaturedPictureCuration
      */
     public static List<String> checkNominationsAreTranscluded(String month) throws IOException
     {
-        String[] nominations = enWiki.getCategoryMembers("Category:Featured picture nominations/" + month);
+        List<String> nominations = enWiki.getCategoryMembers("Category:Featured picture nominations/" + month);
         boolean[] closed = enWiki.pageHasTemplate(nominations, "Template:FPCresult");
-        String[] currentnoms = enWiki.getTemplates("Wikipedia:Featured picture candidates", Wiki.PROJECT_NAMESPACE);
+        List<String> currentnoms = enWiki.getTemplates(List.of("Wikipedia:Featured picture candidates"), 
+            Wiki.PROJECT_NAMESPACE).get(0);
         
         List<String> results = new ArrayList();
-        for (int i = 0; i < nominations.length; i++)
+        for (int i = 0; i < nominations.size(); i++)
             if (!closed[i])
-                results.add(nominations[i]);
-        results.removeAll(Arrays.asList(currentnoms));
+                results.add(nominations.get(i));
+        results.removeAll(currentnoms);
         return results;
     }
     
@@ -188,10 +203,10 @@ public class FeaturedPictureCuration
     {
         // maybe useful for helping people search for existing FPs before nominating...?
         List<Map<String, Object>> results = new ArrayList<>();
-        results.addAll(Arrays.asList(enWiki.search(query + " prefix:Wikipedia:Featured_pictures/")));
-        results.addAll(Arrays.asList(enWiki.search(query + " prefix:Wikipedia:Featured_picture_candidates/")));
-        results.addAll(Arrays.asList(commons.search(query + " prefix:Commons:Featured_pictures/")));
-        results.addAll(Arrays.asList(commons.search(query + " prefix:Commons:Featured_picture_candidates")));
+        results.addAll(enWiki.search(query + " prefix:Wikipedia:Featured_pictures/"));
+        results.addAll(enWiki.search(query + " prefix:Wikipedia:Featured_picture_candidates/"));
+        results.addAll(commons.search(query + " prefix:Commons:Featured_pictures/"));
+        results.addAll(commons.search(query + " prefix:Commons:Featured_picture_candidates"));
         return results;
     }
             

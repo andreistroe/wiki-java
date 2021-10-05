@@ -6,7 +6,7 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%
     request.setAttribute("toolname", "Mass linksearch");
 
@@ -27,7 +27,7 @@
     else
         inputdomains = "";
 %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool searches a single project for a large collection of links. Enter 
@@ -104,4 +104,4 @@ for more domains.
 <%
     }
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

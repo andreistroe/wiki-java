@@ -6,17 +6,16 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
+<%@ include file="security.jspf" %>
 <%@ include file="datevalidate.jspf" %>
 <%
     request.setAttribute("toolname", "NPP/AFC checker");
 
     String username = ServletUtils.sanitizeForAttribute(request.getParameter("username"));
     NPPCheck.Mode mode = NPPCheck.Mode.fromString(request.getParameter("mode"));
-    String offsetparam = request.getParameter("offset");
-    if (offsetparam == null)
-        offsetparam = "0";
+    String offsetparam = Objects.requireNonNullElse(request.getParameter("offset"), "0");  
 %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool retrieves recent new page patrols and moves from draft/user space to 
@@ -29,10 +28,14 @@ main space for a given user (or for all users) and page metadata. A query limit 
     <td><input type=text name=username value="<%= username %>">
 <tr>
     <td>Fetch:
-    <td><input type=radio name=mode value="patrols" <%= mode == NPPCheck.Mode.PATROLS ? " checked" : "" %>>New page patrols
-        <input type=radio name=mode value="drafts" <%= mode == NPPCheck.Mode.DRAFTS ? " checked" : "" %>>Moves from Draft to Main
-        <input type=radio name=mode value="userspace" <%= mode == NPPCheck.Mode.USERSPACE ? " checked" : "" %>>Moves from User to Main
-        <input type=radio name=mode value="redirects" <%= mode == NPPCheck.Mode.REDIRECTS ? " checked" : "" %>>Redirects converted to articles
+    <td><input type=radio name=mode id="patrols" value="patrols" <%= mode == NPPCheck.Mode.PATROLS ? " checked" : "" %>>
+        <label for="patrols">New page patrols</label>
+        <input type=radio name=mode id="drafts" value="drafts" <%= mode == NPPCheck.Mode.DRAFTS ? " checked" : "" %>>
+        <label for="drafts">Moves from Draft to Main</label>
+        <input type=radio name=mode id="userspace" value="userspace" <%= mode == NPPCheck.Mode.USERSPACE ? " checked" : "" %>>
+        <label for="userspace">Moves from User to Main</label>
+        <input type=radio name=mode id="redirects" value="redirects" <%= mode == NPPCheck.Mode.REDIRECTS ? " checked" : "" %>>
+        <label for="redirects">Redirects converted to articles</label>
 <tr>
     <td>Show patrols from:
     <td><input type=date name=earliest value="<%= earliest %>"> to 
@@ -46,7 +49,7 @@ main space for a given user (or for all users) and page metadata. A query limit 
     if (mode == null)
     {
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
     out.println("<hr>");
@@ -57,35 +60,37 @@ main space for a given user (or for all users) and page metadata. A query limit 
     enWiki.setMaxLag(-1);
     enWiki.setQueryLimit(7500);
     NPPCheck check = new NPPCheck(enWiki);
-    List<Wiki.LogEntry> logs = check.fetchLogs(username, earliest_odt, latest_odt, mode);
+    check.setReviewer(username);
+    check.setMode(mode);
+    List<? extends Wiki.Event> logs = check.fetchLogs(earliest_odt, latest_odt);
     
     if (logs.isEmpty())
     {
 %>
 <p>No results found!
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
 
     // fetch metadata
     // limit to 50 articles per page
     int offset = Integer.parseInt(offsetparam);
-    List<Wiki.LogEntry> logsub = logs.subList(offset, Math.min(logs.size(), offset + 51));
+    List<? extends Wiki.Event> logsub = logs.subList(offset, Math.min(logs.size(), offset + 51));
     List<Duration> dt_patrol = Events.timeBetweenEvents(logsub);
     dt_patrol.add(Duration.ofSeconds(-1));
     if (logsub.size() == 51)
         logsub.remove(50);
-    Map<String, Object>[] pageinfo = check.fetchMetadata(logsub);
+    List<Map<String, Object>> pageinfo = check.fetchMetadata(logsub);
     pageinfo = check.fetchCreatorMetadata(pageinfo);
     List<String> snippets = check.fetchSnippets(logsub);
-    List<Wiki.User> reviewerdata = check.fetchReviewerMetadata(logsub, username.isEmpty());
+    List<Wiki.User> reviewerdata = check.fetchReviewerMetadata(logsub);
     List<String> drafts = new ArrayList<>();
-    Map<String, Object>[] draftinfo = null;
+    List<Map<String, Object>> draftinfo = null;
     if (mode.requiresDrafts())
     {
-        for (Wiki.LogEntry log : logsub)
-            drafts.add(log.getTitle());
-        draftinfo = enWiki.getPageInfo(drafts.toArray(new String[0]));    
+        for (Wiki.Event event : logsub)
+            drafts.add(event.getTitle());
+        draftinfo = enWiki.getPageInfo(drafts);    
     }
 
     String requesturl = "./nppcheck.jsp?username=" + username + "&earliest=" + earliest
@@ -102,12 +107,15 @@ main space for a given user (or for all users) and page metadata. A query limit 
 %>
   <th>Article
   <th>Create timestamp
-  <th>Review timestamp
-  <th>Article age at review
 <%
-    if (!username.isEmpty())
+    if (mode.requiresReviews())
     {
-        out.println("<th>Time between reviews");
+        out.println("  <th>Review timestamp");
+        out.println("  <th>Article age at review");
+        if (!username.isEmpty())
+        {
+            out.println("  <th>Time between reviews");
+        }
     }
 %>
   <th>Size
@@ -117,16 +125,16 @@ main space for a given user (or for all users) and page metadata. A query limit 
   <th>Author age at creation
   <th>Author blocked
 <%
-    if (username.isEmpty())
+    if (mode.requiresReviews() && username.isEmpty())
     {
         out.println("  <th>Reviewer");
         out.println("  <th>Reviewer edit count");
     }
     out.println("<th>Snippet");
 
-    for (int i = 0; i < pageinfo.length; i++)
+    for (int i = 0; i < pageinfo.size(); i++)
     {
-        Map<String, Object> info = pageinfo[i];
+        Map<String, Object> info = pageinfo.get(i);
         Wiki.Revision first = (Wiki.Revision)info.get("firstrevision");
         Wiki.LogEntry entry = (Wiki.LogEntry)info.get("logentry");
         Wiki.User creator = (Wiki.User)info.get("creator");
@@ -162,18 +170,19 @@ main space for a given user (or for all users) and page metadata. A query limit 
         if (mode.requiresDrafts())
         {
             String draft = entry.getTitle();
-            out.println("  <td class=\"title\">" + pageutils.generatePageLink(draft, (Boolean)draftinfo[i].get("exists")));
+            out.println("  <td class=\"title\">" + pageutils.generatePageLink(draft, (Boolean)draftinfo.get(i).get("exists")));
         }
 %>
-  <td class="title"><%= pageutils.generatePageLink(title, (Boolean)pageinfo[i].get("exists")) %>
+  <td class="title"><%= pageutils.generatePageLink(title, (Boolean)pageinfo.get(i).get("exists")) %>
   <td class="date"><%= createdate %>
-  <td class="date"><%= patroldate %>
-  <td class="revsize"><%= MathsAndStats.formatDuration(dt_article) %>
 <%
-    if (!username.isEmpty())
-    {
-        out.println("<td class=\"revsize\">" + MathsAndStats.formatDuration(dt_patrol.get(i)));
-    }
+        if (mode.requiresReviews())
+        {
+            out.println("  <td class=\"date\">" + patroldate);
+            out.println("  <td class=\"revsize\">" + MathsAndStats.formatDuration(dt_article));
+            if (!username.isEmpty())
+                out.println("  <td class=\"revsize\">" + MathsAndStats.formatDuration(dt_patrol.get(i)));
+        }
 %>
   <td class="revsize"><%= size %>
   <td class="user"><%= users.generateHTMLSummaryLinksShort(creatorname) %>
@@ -182,7 +191,7 @@ main space for a given user (or for all users) and page metadata. A query limit 
   <td class="revsize"><%= MathsAndStats.formatDuration(dt_user) %>
   <td class="boolean"><%= blocked %>
 <%
-        if (username.isEmpty())
+        if (mode.requiresReviews() && username.isEmpty())
         {
             String reviewer = entry.getUser();
             out.println("  <td class=\"user\">" + users.generateHTMLSummaryLinksShort(reviewer));
@@ -195,5 +204,5 @@ main space for a given user (or for all users) and page metadata. A query limit 
     // output pagination
     out.println(ServletUtils.generatePagination(requesturl, offset, 50, logs.size()));
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 

@@ -6,7 +6,7 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%
     request.setAttribute("toolname", "Prefix contributions");
     request.setAttribute("earliest_default", LocalDate.now(ZoneOffset.UTC).minusDays(7));
@@ -14,7 +14,7 @@
     String prefix = ServletUtils.sanitizeForAttribute(request.getParameter("prefix"));    
 %>
 <%@ include file="datevalidate.jspf" %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool retrieves contributions of an IP range or username prefix. To search 
@@ -61,4 +61,4 @@ is performed on IP addresses. Timeouts are more likely for longer time spans.
         }
     }
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

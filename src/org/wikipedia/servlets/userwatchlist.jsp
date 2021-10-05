@@ -6,7 +6,7 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html>
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%
     request.setAttribute("toolname", "User watchlist");
     request.setAttribute("earliest_default", LocalDate.now(ZoneOffset.UTC).minusDays(30));
@@ -34,7 +34,7 @@
 %>
 
 <%@ include file="datevalidate.jspf" %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool retrieves contributions of a list of users. There is a limit of 50
@@ -69,8 +69,9 @@ Someone # Spam
     <td><input type=date name=earliest value="<%= earliest %>"> to
         <input type=date name=latest value="<%= latest %>"> (inclusive)
 <tr><td>Show:
-    <td><input type=checkbox name=newonly value=1<%= newonly ? " checked" : 
-        "" %>>New pages only
+    <td><input type=checkbox name=newonly id="newonly" value=1<%= newonly ? " checked" : 
+        "" %>>
+        <label for="newonly">New pages only</label>
 <tr><td>Skip:
     <td><input type=number size=50 name=skip value="<%= skip %>">
 </table>
@@ -81,34 +82,34 @@ Someone # Spam
     if (inputpage == null)
     {
         %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
         <%
     }
 
     Map<String, String> input = new LinkedHashMap<>();
     if (enWiki.namespace(inputpage) == Wiki.CATEGORY_NAMESPACE)
     {
-        String[] catmembers = enWiki.getCategoryMembers(inputpage);
+        List<String> catmembers = enWiki.getCategoryMembers(inputpage);
         for (String member : catmembers)
             input.put(enWiki.removeNamespace(member), "");
     }
     else if (inputpage.matches("^User:.+/.+\\.(cs|j)s$"))
     {
         String us = inputpage.substring(5, inputpage.indexOf('/'));
-        Wiki.User us2 = enWiki.getUser(us);
+        Wiki.User us2 = enWiki.getUsers(List.of(us)).get(0);
         if (us2 == null || !us2.isA("sysop"))
         {
             request.setAttribute("error", "TESTING WOOP WOOP WOOP!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
         }
-        String text = enWiki.getPageText(inputpage);
+        String text = enWiki.getPageText(List.of(inputpage)).get(0);
         if (text == null)
         {
             request.setAttribute("error", "ERROR: page &quot;" + ServletUtils.sanitizeForHTML(inputpage) + "&quot; does not exist!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
         }
         // parse input
@@ -136,7 +137,7 @@ Someone # Spam
     {
         request.setAttribute("error", "TESTING WOOP WOOP WOOP!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
 
@@ -144,7 +145,7 @@ Someone # Spam
     {
         request.setAttribute("error", "ERROR: no users found!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
 
@@ -158,11 +159,7 @@ Someone # Spam
     Wiki.RequestHelper rh = enWiki.new RequestHelper()
         .withinDateRange(earliest_odt, latest_odt);
     if (newonly)
-    {
-        Map<String, Boolean> tempmap = new HashMap<>();
-        tempmap.put("new", Boolean.TRUE);
-        rh = rh.filterBy(tempmap);
-    }
+        rh = rh.filterBy(Map.of("new", Boolean.TRUE));
     List<String> users = new ArrayList<>(input.keySet());
     List<String> userstofetch = users.subList(skip, Math.min(skip + 50, users.size()));
     List<List<Wiki.Revision>> contribs = enWiki.contribs(userstofetch, null, rh);
@@ -194,4 +191,4 @@ Someone # Spam
     // end pagination
     out.println(ServletUtils.generatePagination(requesturl, skip, 50, input.size()));
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

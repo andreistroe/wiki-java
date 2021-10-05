@@ -53,11 +53,11 @@ public class WikitextUtils
         // check for description, if not there then set it to the target
         int pipe = linktext.indexOf('|');
         if (pipe >= 0)
-            return Arrays.asList(linktext.substring(0, pipe).trim(), linktext.substring(pipe + 1).trim());
+            return List.of(linktext.substring(0, pipe).trim(), linktext.substring(pipe + 1).trim());
         else
         {
             String temp = linktext.trim();
-            return Arrays.asList(temp, temp);
+            return List.of(temp, temp);
         }        
     }
     
@@ -92,5 +92,25 @@ public class WikitextUtils
         in = in.replace("\"", "&quot;");
         in = in.replace("'", "&#039;");
         return in;
+    }
+    
+    /**
+     *  Removes HTML comments from the supplied string. 
+     *  @param delta the string to strip HTML comments from
+     *  @return the string minus HTML comments
+     *  @since 0.02
+     */
+    public static String removeComments(String delta)
+    {
+        while (delta.contains("<!--"))
+        {
+            int a = delta.indexOf("<!--");
+            int b = delta.indexOf("-->", a);
+            if (b < 0)
+                delta = delta.substring(0, a);
+            else
+                delta = delta.substring(0, a) + delta.substring(b + 3);
+        }
+        return delta;
     }
 }

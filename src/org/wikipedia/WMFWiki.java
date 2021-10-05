@@ -1,6 +1,6 @@
 /**
- *  @(#)WMFWiki.java 0.01 29/03/2011
- *  Copyright (C) 2011 - 2018 MER-C and contributors
+ *  @(#)WMFWiki.java 0.02 28/08/2021
+ *  Copyright (C) 2011 - 20xx MER-C and contributors
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -25,17 +25,21 @@ import java.util.*;
 import java.util.logging.*;
 import java.util.stream.*;
 import java.time.*;
+import javax.security.auth.login.*;
 
 /**
  *  Stuff specific to Wikimedia wikis.
  *  @author MER-C
- *  @version 0.01
+ *  @version 0.02
  */
 public class WMFWiki extends Wiki
 {
     // caches
     private static String globalblacklist;
     private String localblacklist;
+    
+    // Shared sessions
+    private static WMFWiki metawiki;
     
     /**
      *  Denotes entries in the [[Special:Abuselog]]. These cannot be accessed
@@ -50,6 +54,19 @@ public class WMFWiki extends Wiki
      *  @see Wiki#getLogEntries
      */
     public static final String SPAM_BLACKLIST_LOG = "spamblacklist";
+    
+    /**
+     *  Denotes the global auth log (contains (un)lock/(un)hide actions). 
+     *  Requires extension CentralAuth.
+     *  @see Wiki#getLogEntries
+     */
+    public static final String GLOBAL_AUTH_LOG = "globalauth";
+    
+    /**
+     *  Denotes the global (IP) block log. Requires extension GlobalBlocking.
+     *  @see Wiki#getLogEntries
+     */
+    public static final String GLOBAL_BLOCK_LOG = "gblblock";
 
     /**
      *  Creates a new MediaWiki API client for the WMF wiki that has the given 
@@ -73,21 +90,36 @@ public class WMFWiki extends Wiki
         wiki.initVars();
         return wiki;
     }
-
+    
+    /**
+     *  Returns the shared reference to MetaWiki. This instance is modifiable.
+     *  @see <a href="https://meta.wikimedia.org">Main Page</a>
+     *  @return (see above)
+     */
+    public static WMFWiki sharedMetaWikiSession()
+    {
+        if (metawiki == null)
+        {
+            metawiki = newSession("meta.wikimedia.org");
+            metawiki.requiresExtension("SiteMatrix"); // getSiteMatrix
+        }
+        return metawiki;
+    }
+    
     /**
      *  Returns the list of publicly readable and editable wikis operated by the
      *  Wikimedia Foundation.
      *  @return (see above)
      *  @throws IOException if a network error occurs
      */
-    public static WMFWiki[] getSiteMatrix() throws IOException
+    public static List<WMFWiki> getSiteMatrix() throws IOException
     {
-        WMFWiki wiki = newSession("en.wikipedia.org");
-        wiki.requiresExtension("SiteMatrix");
         Map<String, String> getparams = new HashMap<>();
         getparams.put("action", "sitematrix");
-        String line = wiki.makeApiCall(getparams, null, "WMFWiki.getSiteMatrix");
-        ArrayList<WMFWiki> wikis = new ArrayList<>(1000);
+        WMFWiki meta = sharedMetaWikiSession();
+        String line = meta.makeApiCall(getparams, null, "WMFWiki.getSiteMatrix");
+        meta.detectUncheckedErrors(line, null, null);
+        List<WMFWiki> wikis = new ArrayList<>(1000);
 
         // form: <special url="http://wikimania2007.wikimedia.org" code="wikimania2007" fishbowl="" />
         // <site url="http://ab.wiktionary.org" code="wiktionary" closed="" />
@@ -107,128 +139,9 @@ public class WMFWiki extends Wiki
         int size = wikis.size();
         Logger temp = Logger.getLogger("wiki");
         temp.log(Level.INFO, "WMFWiki.getSiteMatrix", "Successfully retrieved site matrix (" + size + " + wikis).");
-        return wikis.toArray(new WMFWiki[size]);
+        return wikis;
     }
     
-    /**
-     *  Fetches global user info. Returns:
-     *  <ul>
-     *  <li>home - (String) a String identifying the home wiki (e.g. "enwiki" 
-     *      for the English Wikipedia)
-     *  <li>registration - (OffsetDateTime) when the single account login was created
-     *  <li>groups - (List&lt;String>) this user is a member of these global 
-     *      groups
-     *  <li>rights - (List&lt;String) this user is explicitly granted the ability
-     *      to perform these actions globally
-     *  <li>locked - (Boolean) whether this user account has been locked
-     *  <li>WIKI IDENTIFIER (e.g. "enwikisource" == "en.wikisource.org") - see below
-     *  </ul>
-     * 
-     *  <p>
-     *  For each wiki, a map is returned:
-     *  <ul>
-     *  <li>url - (String) the full URL of the wiki
-     *  <li>groups - (List&lt;String>) the local groups the user is in
-     *  <li>editcount - (Integer) the local edit count
-     *  <li>blocked - (Boolean) whether the user is blocked. Adds keys "blockexpiry"
-     *      (OffsetDateTime) and "blockreason" (String) with obvious values. If the
-     *      block is infinite, expiry is null.
-     *  <li>registration - (OffsetDateTime) the local registration date
-     *  </ul>
-     * 
-     *  @param username the username of the global user. IPs and non-existing users
-     *  are not allowed.
-     *  @return user info as described above
-     *  @throws IOException if a network error occurs
-     */
-    public static Map<String, Object> getGlobalUserInfo(String username) throws IOException
-    {
-        // fixme(?): throws UnknownError ("invaliduser" if user is an IP, doesn't exist
-        // or otherwise is invalid
-        WMFWiki wiki = newSession("en.wikipedia.org");
-        wiki.requiresExtension("CentralAuth");
-        Map<String, String> getparams = new HashMap<>();
-        getparams.put("action", "query");
-        getparams.put("meta", "globaluserinfo");
-        getparams.put("guiprop", "groups|merged|unattached|rights");
-        getparams.put("guiuser", wiki.normalize(username));
-        String line = wiki.makeApiCall(getparams, null, "WMFWiki.getGlobalUserInfo");
-        
-        // misc properties
-        Map<String, Object> ret = new HashMap<>();
-        ret.put("home", wiki.parseAttribute(line, "home", 0));
-        String registrationdate = wiki.parseAttribute(line, "registration", 0);
-        ret.put("registration", OffsetDateTime.parse(registrationdate));
-        ret.put("locked", line.contains("locked=\"\""));
-        int globaledits = 0;
-        
-        // global groups/rights
-        int mergedindex = line.indexOf("<merged>");
-        List<String> globalgroups = new ArrayList<>();        
-        int groupindex = line.indexOf("<groups");
-        if (groupindex > 0 && groupindex < mergedindex)
-        {
-            for (int x = line.indexOf("<g>"); x > 0; x = line.indexOf("<g>", ++x))
-            {
-                int y = line.indexOf("</g>", x);
-                globalgroups.add(line.substring(x + 3, y));
-            }        
-        }
-        ret.put("groups", globalgroups);
-        List<String> globalrights = new ArrayList<>();
-        int rightsindex = line.indexOf("<rights");
-        if (rightsindex > 0 && rightsindex < mergedindex)
-        {
-            for (int x = line.indexOf("<r>"); x > 0; x = line.indexOf("<r>", ++x))
-            {
-                int y = line.indexOf("</r>", x);
-                globalrights.add(line.substring(x + 3, y));
-            }        
-        }
-        ret.put("rights", globalrights);
-        
-        // individual wikis
-        int mergedend = line.indexOf("</merged>");
-        String[] accounts = line.substring(mergedindex, mergedend).split("<account ");
-        for (int i = 1; i < accounts.length; i++)
-        {
-            Map<String, Object> userinfo = new HashMap<>();
-            userinfo.put("url", wiki.parseAttribute(accounts[i], "url", 0));
-            int editcount = Integer.parseInt(wiki.parseAttribute(accounts[i], "editcount", 0));
-            globaledits += editcount;
-            userinfo.put("editcount", editcount);
-            
-            registrationdate = wiki.parseAttribute(accounts[i], "registration", 0);
-            OffsetDateTime registration = null;
-            // TODO remove check when https://phabricator.wikimedia.org/T24097 is resolved
-            if (registrationdate != null && !registrationdate.isEmpty())
-                registration = OffsetDateTime.parse(registrationdate);
-            userinfo.put("registration", registration);
-            
-            // blocked flag
-            boolean blocked = accounts[i].contains("<blocked ");
-            userinfo.put("blocked", blocked);
-            if (blocked)
-            {
-                String expiry = wiki.parseAttribute(accounts[i], "expiry", 0);
-                userinfo.put("blockexpiry", expiry.equals("infinity") ? null : OffsetDateTime.parse(expiry));
-                userinfo.put("blockreason", wiki.parseAttribute(accounts[i], "reason", 0));
-            }
-            
-            // local groups
-            List<String> groups = new ArrayList<>();
-            for (int x = accounts[i].indexOf("<group>"); x > 0; x = accounts[i].indexOf("<group>", ++x))
-            {
-                int y = accounts[i].indexOf("</group>", x);
-                groups.add(accounts[i].substring(x + 7, y));
-            }
-            userinfo.put("groups", groups);
-            ret.put(wiki.parseAttribute(accounts[i], "wiki", 0), userinfo);
-        }
-        ret.put("editcount", globaledits);
-        return ret;
-    }
-
     /**
      *  Require the given extension be installed on this wiki, or throw an 
      *  UnsupportedOperationException if it isn't.
@@ -259,7 +172,7 @@ public class WMFWiki extends Wiki
      *  not installed
      *  @see <a href="https://mediawiki.org/wiki/Extension:GlobalUsage">Extension:GlobalUsage</a>
      */
-    public String[][] getGlobalUsage(String title) throws IOException
+    public List<String[]> getGlobalUsage(String title) throws IOException
     {
         requiresExtension("Global Usage");
     	if (namespace(title) != FILE_NAMESPACE)
@@ -278,7 +191,7 @@ public class WMFWiki extends Wiki
                 });
         });
 
-    	return usage.toArray(new String[0][0]);
+    	return usage;
     }
     
     /**
@@ -295,12 +208,9 @@ public class WMFWiki extends Wiki
     {
         requiresExtension("SpamBlacklist");
         if (globalblacklist == null)
-        {
-            WMFWiki meta = newSession("meta.wikimedia.org");
-            globalblacklist = meta.getPageText("Spam blacklist");
-        }
+            globalblacklist = sharedMetaWikiSession().getPageText(List.of("Spam blacklist")).get(0);
         if (localblacklist == null)
-            localblacklist = getPageText("MediaWiki:Spam-blacklist");
+            localblacklist = getPageText(List.of("MediaWiki:Spam-blacklist")).get(0);
         
         // yes, I know about the spam whitelist, but I primarily intend to use
         // this to check entire domains whereas the spam whitelist tends to 
@@ -377,11 +287,9 @@ public class WMFWiki extends Wiki
                 String loguser = parseAttribute(items[i], "user", 0);
                 String action = parseAttribute(items[i], "action", 0);
                 String target = parseAttribute(items[i], "title", 0);
-                Map<String, Object> details = new HashMap<>();
-                String revid = parseAttribute(items[i], "revid", 0); // may be null
-                if (revid != null)
-                    details.put("revid", Long.valueOf(revid));
-                details.put("filter_id", Integer.valueOf(parseAttribute(items[i], "filter_id", 0)));
+                Map<String, String> details = new HashMap<>();
+                details.put("revid", parseAttribute(items[i], "revid", 0));
+                details.put("filter_id", parseAttribute(items[i], "filter_id", 0));
                 details.put("result", parseAttribute(items[i], "result", 0));
                 results.add(new LogEntry(id, timestamp, loguser, null, null, ABUSE_LOG, action, target, details));
             }
@@ -469,5 +377,138 @@ public class WMFWiki extends Wiki
         for (List<String> item : temp)
             ret.add(item.get(0));
         return ret;
+    }
+    
+    /**
+     *  Returns the Wikidata items corresponding to the given titles.
+     *  @param titles a list of page names
+     *  @return the corresponding Wikidata items, or null if either the Wikidata
+     *  item or the local article doesn't exist
+     *  @throws IOException if a network error occurs
+     */
+    public List<String> getWikidataItems(List<String> titles) throws IOException
+    {
+        String dbname = (String)getSiteInfo().get("dbname");
+        Map<String, String> getparams = new HashMap<>();
+        getparams.put("action", "wbgetentities");
+        getparams.put("sites", dbname);
+        
+        // WORKAROUND: this module doesn't accept mixed GET/POST requests
+        // often need to slice up titles into smaller chunks than slowmax (here 25)
+        // FIXME: replace with constructTitleString when Wikidata is behaving correctly
+        TreeSet<String> ts = new TreeSet<>();
+        for (String title : titles)
+            ts.add(normalize(title));
+        List<String> titles_enc = new ArrayList<>(ts);
+        ArrayList<String> titles_chunked = new ArrayList<>();
+        int count = 0;
+        do
+        {
+            titles_chunked.add(String.join("|", 
+                titles_enc.subList(count, Math.min(titles_enc.size(), count + 25))));
+            count += 25;
+        }
+        while (count < titles_enc.size());
+        
+        Map<String, String> results = new HashMap<>();
+        WMFWiki wikidata_l = WMFWiki.newSession("www.wikidata.org");
+        for (String chunk : titles_chunked)
+        {
+            getparams.put("titles", chunk);
+            String line = wikidata_l.makeApiCall(getparams, null, "getWikidataItem");
+            wikidata_l.detectUncheckedErrors(line, null, null);
+            String[] entities = line.split("<entity ");
+            for (int i = 1; i < entities.length; i++)
+            {
+                if (entities[i].contains("missing=\"\""))
+                    continue;
+                String wdtitle = parseAttribute(entities[i], " id", 0);
+                int index = entities[i].indexOf("\"" + dbname + "\"");
+                String localtitle = parseAttribute(entities[i], "title", index);
+                results.put(localtitle, wdtitle);
+            }
+        }
+        // reorder
+        List<String> ret = new ArrayList<>();
+        for (String title : titles)
+            ret.add(results.get(normalize(title)));
+        return ret;
+    }
+    
+    /**
+     *  Patrols or unpatrols new pages using the PageTriage extension. If a page
+     *  is not in the queue, then this method adds the page to the PageTriage
+     *  queue, which also unpatrols it.
+     * 
+     *  @param pageid the page to (un)patrol
+     *  @param reason the reason for (un)patrolling the page for the log
+     *  @param patrol true to patrol, false to unpatrol
+     *  @param skipnotif does not send a notification to the author when the page
+     *  is (un)patrolled, ignored for old pages
+     *  @throws IOException if a network error occurs
+     *  @throws SecurityException if one does not have the rights to patrol pages
+     *  @throws CredentialExpiredException if cookies have expired
+     *  @throws AccountLockedException if user is blocked
+     *  @throws IllegalArgumentException if the page is not in a namespace where
+     *  PageTriage is enabled.
+     *  @since 0.02
+     *  @see <a href="https://en.wikipedia.org/wiki/Wikipedia:Page_Curation">Extension
+     *  documentation</a>
+     */
+    public void triageNewPage(long pageid, String reason, boolean patrol, boolean skipnotif) throws IOException, LoginException
+    {
+        pageTriageAction(pageid, reason, patrol, skipnotif);
+    }
+    
+    /**
+     *  Internal method for handling PageTriage actions.
+     *  @param pageid the page to (un)patrol or add to the queue
+     *  @param reason the reason for (un)patrolling the page
+     *  @param patrol whether to (un)patrol the page, or null to add it to the queue
+     *  @param skipnotif do not notify the article author. Only applicable if 
+     *  {@code patrol != null}.
+     *  @throws IOException if a network error occurs
+     *  @throws SecurityException if one does not have the rights to patrol pages
+     *  @throws CredentialExpiredException if cookies have expired
+     *  @throws AccountLockedException if user is blocked
+     *  @throws IllegalArgumentException if the page is not in a namespace where
+     *  PageTriage is enabled.
+     *  @since 0.02
+     *  @see <a href="https://en.wikipedia.org/wiki/Wikipedia:Page_Curation">Extension
+     *  documentation</a>
+     *  @see <a href="https://en.wikipedia.org/w/api.php?action=help&modules=pagetriageaction">API
+     *  documentation</a>
+     */
+    protected synchronized void pageTriageAction(long pageid, String reason, Boolean patrol, boolean skipnotif) throws IOException, LoginException
+    {
+        requiresExtension("PageTriage");
+        checkPermissions("patrol", "patrol");
+        throttle();
+        
+        Map<String, Object> params = new HashMap<>();
+        params.put("action", "pagetriageaction");
+        params.put("pageid", pageid);
+        params.put("token", getToken("csrf"));
+        if (reason != null)
+            params.put("note", reason);
+        if (patrol != null)
+        {
+            params.put("reviewed", patrol ? "1" : "0");
+            if (skipnotif)
+                params.put("skipnotif", "1");
+        }
+        else
+            params.put("enqueue", "1");
+        
+        String response = makeApiCall(new HashMap<>(), params, "pageTriageAction");
+        // Unfortunately there is no way to tell whether a particular page is
+        // in a PageTriage queue, so we are left with this.
+        // Enqueue pages that aren't in the queue when unpatrol requested.
+        if (response.contains("<error code=\"bad-pagetriage-page\"") && Boolean.FALSE.equals(patrol))
+            pageTriageAction(pageid, reason, null, false);
+        checkErrorsAndUpdateStatus(response, "pageTriageAction", Map.of(
+            "bad-pagetriage-enqueue-invalidnamespace", desc -> 
+                new IllegalArgumentException("Cannot (un)patrol page, PageTriage is not enabled for this namespace.")), null);
+        log(Level.INFO, "pageTriageAction", "Successfully (un)patrolled page " + pageid);
     }
 }

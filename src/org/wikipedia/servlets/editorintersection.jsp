@@ -6,18 +6,14 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%@ include file="datevalidate.jspf" %>
 <%
     request.setAttribute("toolname", "Article/editor intersection");
     request.setAttribute("scripts", new String[] { "common.js", "collapsible.js", "EditorIntersection.js" });
 
     String wikiparam = ServletUtils.sanitizeForAttributeOrDefault(request.getParameter("wiki"), "en.wikipedia.org");
-
-    String mode = request.getParameter("mode");
-    if (mode == null)
-        mode = "none";
-
+    String mode = Objects.requireNonNullElse(request.getParameter("mode"), "none");
     String pages = ServletUtils.sanitizeForHTML(request.getParameter("pages"));    
     String category = ServletUtils.sanitizeForAttribute(request.getParameter("category"));
     String user = ServletUtils.sanitizeForAttribute(request.getParameter("user"));
@@ -28,7 +24,7 @@
     boolean nominor = (request.getParameter("nominor") != null);
     boolean noreverts = (request.getParameter("noreverts") != null);
 %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool retrieves the common editors of a given set of pages. Query limits of
@@ -42,26 +38,31 @@ first in the GUI) apply.
     <td><input type=text name=wiki value="<%= wikiparam %>" required>
 <tr>
     <td><input type=radio name=mode id="radio_cat" value="category"<%= mode.equals("category") ? " checked" : "" %>>
-    <td>Category:
+    <td><label for="radio_cat">Category:</label>
     <td><input type=text id=category name=category <%= mode.equals("category") ? "value=\"" + category + "\" required" : "disabled"%>>
 <tr>
     <td><input type=radio name=mode id="radio_user" value="contribs"<%= mode.equals("contribs") ? " checked" : "" %>>
-    <td>Pages edited by:
+    <td><label for="radio_user">Pages edited by:</label>
     <td><input type=text id=user name=user <%= mode.equals("contribs") ? "value=\"" + user + "\" required" : "disabled"%>>
 <tr>
     <td valign=top><input type=radio name=mode id="radio_pages" value="pages"<%= mode.equals("pages") ? " checked" : "" %>>
-    <td valign=top>Pages:<br>(one per line)
+    <td valign=top><label for="radio_pages">Pages:<br>(one per line)</label>
     <td>
         <textarea id=pages name=pages rows=10 <%= mode.equals("pages") ? "required" : "disabled" %>>
 <%= pages %>
         </textarea>
 <tr>
     <td colspan=2>Exclude: 
-    <td><input type=checkbox name=noadmin value=1<%= (pages.isEmpty() || noadmin) ? " checked" : "" %>>admins
-        <input type=checkbox name=nobot value=1<%= (pages.isEmpty() || nobot) ? " checked" : "" %>>bots
-        <input type=checkbox name=noanon value=1<%= noanon ? " checked" : "" %>>IPs
-        <input type=checkbox name=nominor value=1<%= nominor ? " checked" : "" %>>minor edits
-        <input type=checkbox name=noreverts value=1<%= noreverts ? " checked" : "" %>>reverts
+    <td><input type=checkbox name=noadmin id="noadmin" value=1<%= (pages.isEmpty() || noadmin) ? " checked" : "" %>>
+        <label for="noadmin">admins</label>
+        <input type=checkbox name=nobot id="nobot" value=1<%= (pages.isEmpty() || nobot) ? " checked" : "" %>>
+        <label for="nobot">bots</label>
+        <input type=checkbox name=noanon id="noanon" value=1<%= noanon ? " checked" : "" %>>
+        <label for="noanon">IPs</label>
+        <input type=checkbox name=nominor id="nominor" value=1<%= nominor ? " checked" : "" %>>
+        <label for="nominor">minor edits</label>
+        <input type=checkbox name=noreverts id="noreverts" value=1<%= noreverts ? " checked" : "" %>>
+        <label for="noreverts">reverts</label>
 <tr>
     <td colspan=2>Show changes from:
     <td><input type=date name=earliest value="<%= earliest %>"> to 
@@ -75,7 +76,7 @@ first in the GUI) apply.
     if (request.getAttribute("error") != null)
     {
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
 
@@ -87,7 +88,7 @@ first in the GUI) apply.
     switch (mode)
     {
         case "category":
-            pagestream = Arrays.stream(wiki.getCategoryMembers(category));
+            pagestream = wiki.getCategoryMembers(category).stream();
             break;
         case "contribs":
             pagestream = wiki.contribs(user, null).stream().map(Wiki.Revision::getTitle);
@@ -98,7 +99,7 @@ first in the GUI) apply.
         default:
             // state with no input parameters       
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
         
@@ -110,7 +111,7 @@ first in the GUI) apply.
     {
         request.setAttribute("error", "Need at least two distinct pages to perform an intersection!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
     ArticleEditorIntersector aei = new ArticleEditorIntersector(wiki);
@@ -122,7 +123,7 @@ first in the GUI) apply.
     {
         request.setAttribute("error", "No intersection after applying exclusions and removing non-existing pages!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
     Map<String, Map<String, List<Wiki.Revision>>> bypage = new HashMap<>();
@@ -171,4 +172,4 @@ first in the GUI) apply.
     out.println("<hr>");
     out.println(blah);
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

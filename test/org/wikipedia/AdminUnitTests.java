@@ -69,6 +69,20 @@ public class AdminUnitTests
         assertEquals("", testWiki.getDeletedText("User:MER-C/UnitTests/EmptyDelete"), "deleted, empty page");
     }
     
+    @Test
+    public void getDeletedHistory() throws Exception
+    {
+        Wiki.RequestHelper rh = testWiki.new RequestHelper()
+            .withinDateRange(OffsetDateTime.parse("2019-05-03T00:00:00Z"), OffsetDateTime.parse("2019-05-04T00:00:00Z"));
+        List<Wiki.Revision> revisions = testWiki.getDeletedHistory("User:MER-C/UnitTests/Delete2", rh);
+        assertEquals(3, revisions.size());
+        Wiki.Revision first = revisions.get(0);
+        assertEquals(OffsetDateTime.parse("2019-05-03T16:23:32Z"), first.getTimestamp());
+        assertEquals("MER-C", first.getUser());
+        assertEquals("User:MER-C/UnitTests/Delete2", first.getTitle());
+        assertTrue(first.isPageDeleted());
+    }
+    
     /**
      *  Fetches revisions of deleted pages.
      *  @throws Exception if something goes wrong
@@ -101,9 +115,9 @@ public class AdminUnitTests
         // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete2
         String pagename = "User:MER-C/UnitTests/Delete2";
         testWiki.edit(pagename, "Dummy text", "A dummy edit summary");
-        assertTrue((Boolean)testWiki.getPageInfo(pagename).get("exists"));
+        assertTrue((Boolean)testWiki.getPageInfo(List.of(pagename)).get(0).get("exists"));
         testWiki.delete(pagename, "Per cabal orders (just testing).");
-        assertFalse((Boolean)testWiki.getPageInfo(pagename).get("exists"));
+        assertFalse((Boolean)testWiki.getPageInfo(List.of(pagename)).get(0).get("exists"));
     }
     
     @Test
@@ -117,11 +131,11 @@ public class AdminUnitTests
         // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete2
         String pagename = "User:MER-C/UnitTests/Delete3";
         testWiki.edit(pagename, "Dummy text", "A dummy edit summary");
-        assertTrue((Boolean)testWiki.getPageInfo(pagename).get("exists"));
+        assertTrue((Boolean)testWiki.getPageInfo(List.of(pagename)).get(0).get("exists"));
         testWiki.delete(pagename, "Per cabal orders (just testing).");
-        assertFalse((Boolean)testWiki.getPageInfo(pagename).get("exists"));
+        assertFalse((Boolean)testWiki.getPageInfo(List.of(pagename)).get(0).get("exists"));
         testWiki.undelete(pagename, "There is no cabal.");
-        assertTrue((Boolean)testWiki.getPageInfo(pagename).get("exists"));        
+        assertTrue((Boolean)testWiki.getPageInfo(List.of(pagename)).get(0).get("exists"));
     }
     
     @Test
@@ -130,7 +144,7 @@ public class AdminUnitTests
         // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/revdel
         Wiki.Revision revision = testWiki.getRevision(349877L);
         testWiki.revisionDelete(Boolean.TRUE, Boolean.TRUE, Boolean.TRUE, "Unit testing", 
-            Boolean.FALSE, Arrays.asList(revision));
+            Boolean.FALSE, List.of(revision));
         assertTrue(revision.isCommentDeleted());
         assertTrue(revision.isContentDeleted());
         assertTrue(revision.isUserDeleted());
@@ -162,7 +176,7 @@ public class AdminUnitTests
         // undo RevisionDelete test on Revision
         Wiki.Revision revision = testWiki.getRevision(349877L);
         testWiki.revisionDelete(Boolean.FALSE, Boolean.FALSE, Boolean.FALSE, "reset test", 
-            Boolean.FALSE, Arrays.asList(revision));
+            Boolean.FALSE, List.of(revision));
         
         // undo RevisionDelete test on LogEntry
         Wiki.RequestHelper rh = testWiki.new RequestHelper()

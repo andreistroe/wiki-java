@@ -19,7 +19,9 @@
  */
 package org.wikipedia.tools;
 
+import java.io.IOException;
 import java.util.*;
+import org.wikipedia.Wiki;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -98,19 +100,25 @@ public class CommandLineParserTest
             .addBooleanFlag("--boolean", "A boolean flag.")
             .addSingleArgumentFlag("--flag", "[string]", "Set some value to string.")
             .buildHelpString();
-        String expected = "SYNOPSIS:\n" +
-            "\tjava TestProgram [test arguments]\n\n" +
-            "DESCRIPTION:\n" +
-            "\tA description of the program\n\n" +
-            "\t--help\n" +
-            "\t\tPrints this screen and exits.\n" +
-            "\t--version\n" +
-            "\t\tOutputs version information and exits.\n\n" +
-            "Options:\n" + 
-            "\t--boolean\n" +
-            "\t\tA boolean flag.\n" +
-            "\t--flag [string]\n" +
-            "\t\tSet some value to string.\n";
+        String expected = """
+            SYNOPSIS:
+                java TestProgram [test arguments]
+            
+            DESCRIPTION:
+                A description of the program
+            
+                --help
+                    Prints this screen and exits.
+                --version
+                    Outputs version information and exits.
+            
+            Options:
+                --boolean
+                    A boolean flag.
+                --flag [string]
+                    Set some value to string.
+            """.replace("    ", "\t");
+        System.out.println(expected);
         System.out.println(actual);
         assertEquals(expected, actual);
     }
@@ -151,5 +159,30 @@ public class CommandLineParserTest
         assertEquals("default1 default2", entry.getValue(), "default argument");
         
         // cannot test --help and --version because of VM exit
+    }
+    
+    @Test
+    public void parseUserOptions() throws IOException
+    {
+        Map<String, String> args = new HashMap<>();
+        Wiki enWiki = Wiki.newSession("en.wikipedia.org");
+        List<String> users = CommandLineParser.parseUserOptions(args, enWiki);
+        assertTrue(users.isEmpty());
+        
+        args.put("--user", "Bodiadub");
+        users = CommandLineParser.parseUserOptions(args, enWiki);
+        assertTrue(users.contains("Bodiadub"));
+        assertTrue(users.size() == 1);
+        
+        args.put("--category", "Category:Wikipedia sockpuppets of Bodiadub");
+        users = CommandLineParser.parseUserOptions(args, enWiki);
+        assertTrue(users.contains("Bodiadub"));
+        assertTrue(users.size() > 30);
+        assertTrue(users.contains("Sorrow3"));
+        
+        args.remove("--user");
+        users = CommandLineParser.parseUserOptions(args, enWiki);
+        assertFalse(users.contains("Bodiadub"));
+        assertTrue(users.size() > 30);
     }
 }

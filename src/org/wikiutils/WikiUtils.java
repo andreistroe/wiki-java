@@ -1,7 +1,7 @@
 package org.wikiutils;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.*;
 import org.wikipedia.Wiki;
 
 /**
@@ -28,7 +28,7 @@ public class WikiUtils
 
 	/**
 	 * Returns all the items in an array that are within the specified namespace. e.g.
-	 * <tt>listNamespaceSort(list, WIKI.FILE_NAMESPACE, wiki);</tt>
+	 * <code>listNamespaceSort(list, WIKI.FILE_NAMESPACE, wiki);</code>
 	 * 
 	 * @param wiki The wiki object to use.
 	 * @param ns The namespace filter.  Items in this namespace shall be returned.
@@ -54,7 +54,7 @@ public class WikiUtils
 	 * Generic find and replace method.
 	 * 
 	 * @param find The text to be found. You can use a regex for this
-	 * @param replacement The text to replace any text matching the <tt>find</tt> field
+	 * @param replacement The text to replace any text matching the <code>find</code> field
 	 * @param summary The edit summary to use
 	 * @param wiki The wiki object to use
 	 * @param pages The wiki pages to act upon.
@@ -65,7 +65,9 @@ public class WikiUtils
 		{
 			try
 			{
-				wiki.edit(s, wiki.getPageText(s).replaceAll(find, replacement), summary);
+                            // not vectorized to reduce edit conflicts
+                            String text = wiki.getPageText(List.of(s)).get(0);
+                            wiki.edit(s, text.replaceAll(find, replacement), summary);
 			}
 			catch (Throwable e)
 			{
@@ -86,8 +88,10 @@ public class WikiUtils
 		{
 			try
 			{
-				System.err.println("Attempting null edit on '" + s + "'");
-				wiki.edit(s, wiki.getPageText(s), "");
+                            System.err.println("Attempting null edit on '" + s + "'");
+                            // not vectorized to reduce edit conflicts
+			    String text = wiki.getPageText(List.of(s)).get(0);
+                            wiki.edit(s, text, "");
 				
 			}
 			catch (Throwable e)
@@ -109,7 +113,7 @@ public class WikiUtils
 	{
 		try
 		{
-			return wiki.getCategoryMembers(wiki.removeNamespace(cat)).length == 0;
+			return wiki.getCategoryMembers(wiki.removeNamespace(cat)).isEmpty();
 		}
 		catch (Throwable e)
 		{

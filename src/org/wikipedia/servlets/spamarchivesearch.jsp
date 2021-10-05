@@ -6,12 +6,12 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%
     request.setAttribute("toolname", "Spam archive search");
     String query = request.getParameter("query");
 %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool searches various spam related noticeboards for a given query string. 
@@ -50,4 +50,4 @@ If you want to search a domain name, please enclose it in quotation marks.
 <%
     }
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

@@ -15,7 +15,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 --%>
-
+<%@ include file="security.jspf" %>
 <%@ include file="datevalidate.jspf" %>
 <%
     request.setAttribute("toolname", "Image contribution surveyor");
@@ -25,28 +25,25 @@
     Wiki wiki = Wiki.newSession(homewiki);
 
     ContributionSurveyor surveyor = new ContributionSurveyor(wiki);
-    String[][] survey = null;
+    List<String> surveydata = null;
+    if (user != null)
+        request.setAttribute("contenttype", "text");
+%>
+<%@ include file="header.jspf" %>
+<%
     if (user != null)
     {
-        Wiki.User wpuser = wiki.getUser(user);
-        if (wpuser != null)
-        {
-            // get results
-            request.setAttribute("contenttype", "text");
-            surveyor.setDateRange(earliest_odt, latest_odt);
-            survey = surveyor.imageContributionSurvey(wpuser);
-        }
-    }
-%>
-<%@ include file="header.jsp" %>
-<%
-    if (survey != null)
-    {
-        response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(user, "UTF-8") + ".txt");
-        out.print(Users.generateWikitextSummaryLinks(user));
-        out.println("* Survey URL: " + request.getRequestURL() + "?" + request.getQueryString());
-        out.print(surveyor.formatImageSurveyAsWikitext(null, survey));
-        out.println(surveyor.generateWikitextFooter());
+        surveyor.setDateRange(earliest_odt, latest_odt);
+        surveydata = surveyor.outputContributionSurvey(List.of(user), false, false, true);
+
+        String footer = "Survey URL: " + request.getRequestURL() + "?" + request.getQueryString();
+        // TODO: output as ZIP
+        for (int i = 0; i < surveydata.size(); i++)
+            surveydata.set(i, surveydata.get(i) + footer);
+            
+        response.setHeader("Content-Disposition", "attachment; filename=" 
+            + URLEncoder.encode(user, StandardCharsets.UTF_8) + ".txt");
+        out.print(String.join("\n", surveydata));
         return;
     }
 %>
@@ -60,7 +57,7 @@ href="//en.wikipedia.org/wiki/WP:CCI">Contributor copyright investigations.</a>
 <table>
 <tr>
     <td>User to survey:
-    <td><input type=text name=user value="<%= user == null ? "" : ServletUtils.sanitizeForAttribute(user) %>" required>
+    <td><input type=text name=user value="<%= ServletUtils.sanitizeForAttribute(user) %>" required>
 <tr>
     <td>Home wiki:
     <td><input type=text name="wiki" value="<%= homewiki %>" required>
@@ -73,7 +70,7 @@ href="//en.wikipedia.org/wiki/WP:CCI">Contributor copyright investigations.</a>
 </form>
 
 <%
-    if (user != null && survey == null)
+    if (user != null && surveydata.isEmpty())
         request.setAttribute("error", "ERROR: User " + ServletUtils.sanitizeForHTML(user) + " does not exist!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

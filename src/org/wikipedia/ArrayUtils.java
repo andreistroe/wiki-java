@@ -23,7 +23,7 @@ package org.wikipedia;
 import java.util.*;
 
 /**
- *  Convenience methods for dealing with lists of pages and revisions.
+ *  Convenience methods for dealing with collections of pages and revisions.
  *  @author MER-C
  *  @version 0.01
  */
@@ -52,10 +52,10 @@ public class ArrayUtils
     public static String[] intersection(String[] a, String[]... b)
     {
         List<String> intersec = new ArrayList<>(5000);
-        intersec.addAll(Arrays.asList(a));
+        intersec.addAll(List.of(a));
         for (String[] subarray : b)
-            intersec.retainAll(Arrays.asList(subarray));
-        return intersec.toArray(new String[intersec.size()]);
+            intersec.retainAll(List.of(subarray));
+        return intersec.toArray(String[]::new);
     }
 
     /**
@@ -83,9 +83,32 @@ public class ArrayUtils
     public static String[] relativeComplement(String[] a, String[]... b)
     {
         List<String> compl = new ArrayList<>(5000);
-        compl.addAll(Arrays.asList(a));
+        compl.addAll(List.of(a));
         for (String[] subarray : b)
-            compl.removeAll(Arrays.asList(subarray));
-        return compl.toArray(new String[compl.size()]);
+            compl.removeAll(List.of(subarray));
+        return compl.toArray(String[]::new);
+    }
+    
+    /**
+     *  Returns a copy of the supplied map sorted by the given {@code Comparator}.
+     *  @param <K> the map key class
+     *  @param <V> the map value class (must be comparable)
+     *  @param map the input map
+     *  @param cmp the Comparator to sort by
+     *  @return the sorted map
+     *  @author <a href="https://stackoverflow.com/users/309596/carter-page">Carter 
+     *  Page</a> (modified by MER-C)
+     */
+    public static <K, V extends Comparable<? super V>> Map<K, V> sortByValue(Map<K, V> map, Comparator<? super V> cmp)
+    {
+        // from https://stackoverflow.com/questions/109383/sort-a-mapkey-value-by-values
+        List<Map.Entry<K, V>> list = new ArrayList<>(map.entrySet());
+        list.sort(Map.Entry.comparingByValue(cmp));
+
+        Map<K, V> result = new LinkedHashMap<>();
+        for (Map.Entry<K, V> entry : list)
+            result.put(entry.getKey(), entry.getValue());
+
+        return result;
     }
 }

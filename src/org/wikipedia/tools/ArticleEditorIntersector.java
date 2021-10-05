@@ -103,7 +103,7 @@ public class ArticleEditorIntersector
         OffsetDateTime editsbefore = (latestdatestring == null) ? null : OffsetDateTime.parse(latestdatestring);
         List<String> articles = null;
         if (defaultstring != null)
-            articles = Arrays.asList(defaultstring.split("\\s"));
+            articles = List.of(defaultstring.split("\\s"));
         if (filename != null)
             articles = Files.readAllLines(Paths.get(filename));
         
@@ -113,17 +113,7 @@ public class ArticleEditorIntersector
         aei.setIgnoringReverts(noreverts);
         if (adminmode)
         {
-            // CLI login
-            try
-            {
-                Console console = System.console();
-                wiki.login(console.readLine("Username: "), console.readPassword("Password: "));
-            }
-            catch (FailedLoginException ex)
-            {
-                System.err.println("Invalid username or password.");
-                System.exit(1);
-            }
+            Users.of(wiki).cliLogin();
             aei.setUsingAdminPrivileges(true);
         }
         
@@ -153,7 +143,7 @@ public class ArticleEditorIntersector
         }
         // grab from category
         if (category != null)
-            articles = Arrays.asList(wiki.getCategoryMembers(category));
+            articles = wiki.getCategoryMembers(category);
         
         if (articles.isEmpty())
         {

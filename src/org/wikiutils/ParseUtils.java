@@ -29,7 +29,7 @@ public class ParseUtils
 	
 	/**
 	 *  Gets the target of the redirect page. 
-         *  <br><b>PRECONDITION</b>: <tt>redirect</tt> must be a Redirect.
+         *  <br><b>PRECONDITION</b>: <code>redirect</code> must be a Redirect.
 	 * 
 	 *  @param redirect The title of the redirect to get the target for.
 	 *  @param wiki The wiki object to use.
@@ -39,7 +39,7 @@ public class ParseUtils
 	 */
 	public static String getRedirectTarget(String redirect, Wiki wiki) throws IOException
 	{
-		String text = wiki.getPageText(redirect).trim();
+		String text = wiki.getPageText(List.of(redirect)).get(0).trim();
 
 		if (text.matches("(?si)^#(redirect)\\s*?\\[\\[.+?\\]\\].*?"))
 			return text.substring(text.indexOf("[[") + 2, text.indexOf("]]"));
@@ -63,7 +63,7 @@ public class ParseUtils
 	public static String getRedirectsAsRegex(String template, Wiki wiki) throws IOException
 	{
 		String r = "(?si)\\{{2}?\\s*?(Template:)??\\s*?(" + wiki.removeNamespace(template);
-		for (String str : wiki.whatLinksHere(Arrays.asList(template), true, Wiki.TEMPLATE_NAMESPACE).get(0))
+		for (String str : wiki.whatLinksHere(List.of(template), true, false, Wiki.TEMPLATE_NAMESPACE).get(0))
 			r += "|" + wiki.removeNamespace(str);
 		r += ").*?\\}{2}?";
 
@@ -71,9 +71,9 @@ public class ParseUtils
 	}
 
 	/**
-	 * Used to check if <tt>{{bots}}</tt> or <tt>{{robots}}</tt>, case-insensitive, is present in a String.
+	 * Used to check if <code>{{bots}}</code> or <code>{{robots}}</code>, case-insensitive, is present in a String.
 	 * 
-	 * @param text The String to check for <tt>{{bots}}</tt> or <tt>{{nobots}}</tt>
+	 * @param text The String to check for <code>{{bots}}</code> or <code>{{nobots}}</code>
 	 * @param user The account to check for, without the "User:" prefix.
 	 * 
 	 * @return boolean True if this particular bot should be allowed to edit this page.
@@ -100,7 +100,7 @@ public class ParseUtils
 
 	public static void templateReplace(String template, String replacementText, String reason, Wiki wiki) throws IOException
 	{
-		String[] list = wiki.whatTranscludesHere(template);
+		List<String> list = wiki.whatTranscludesHere(List.of(template)).get(0);
 		if (template.startsWith("Template:"))
 			template = wiki.removeNamespace(template);
 
@@ -108,7 +108,9 @@ public class ParseUtils
 		{
 			try
 			{
-				wiki.edit(page, wiki.getPageText(page).replaceAll("(?i)(" + template + ")", replacementText), reason);
+                            // not vectorized to reduce edit conflicts
+                            String text = wiki.getPageText(List.of(page)).get(0);
+                            wiki.edit(page, text.replaceAll("(?i)(" + template + ")", replacementText), reason);
 			}
 			catch (Throwable e)
 			{
@@ -190,7 +192,7 @@ public class ParseUtils
 	 * 
 	 * @param text Text to search
 	 * @param template The Template (in template namespace) to look for. DO NOT add namespace prefix.
-	 * @param redirects Specify <tt>true</tt> to incorporate redirects in this parse job for this template.
+	 * @param redirects Specify <code>true</code> to incorporate redirects in this parse job for this template.
 	 * @param wiki The wiki object to use
 	 * 
 	 * @return The template we parsed out, in the form {{TEMPLATE|ARG1|ARG2|...}} or NULL, if we didn't find the specified template.
@@ -316,21 +318,6 @@ public class ParseUtils
                 }
                 map.remove("ParamWithoutName" + i);
                 return templateFromMap(map);
-        }
-        
-        /**
-         *  Creates a string consisting of the given character repeated len times.
-         *  @param c the character
-         *  @param len the final length
-         *  @return see above
-         *  @deprecated as of Java 11, use {@code String.repeat()}
-         */
-        @Deprecated
-        public static String getString(char c, int len)
-        {
-                char[] temp = new char[len];
-                Arrays.fill(temp, c);
-                return new String(temp);
         }
 
         /**

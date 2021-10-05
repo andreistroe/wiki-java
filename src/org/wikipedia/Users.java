@@ -22,7 +22,9 @@ package org.wikipedia;
 
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import javax.security.auth.login.FailedLoginException;
 
 /**
  *  Utility methods for wiki users.
@@ -76,23 +78,16 @@ public class Users
      */
     public String generateHTMLSummaryLinks(String username)
     {
-        try
-        {
-            String indexPHPURL = wiki.getIndexPhpUrl();
-            username = WikitextUtils.recode(username);
-            String userenc = URLEncoder.encode(username, "UTF-8");
-            return pageutils.generatePageLink("User:" + username, username) + " ("
-                +  pageutils.generatePageLink("User talk:" + username, "talk") + " | "
-                +  pageutils.generatePageLink("Special:Contributions/" + username, "contribs") + " | "
-                +  pageutils.generatePageLink("Special:DeletedContributions/" + username, "deleted contribs") + " | "
-                +  "<a href=\"" + indexPHPURL + "?title=Special:Log&user=" + userenc + "\">logs</a> | "
-                +  pageutils.generatePageLink("Special:Block/" + username, "block") + " | "
-                +  "<a href=\"" + indexPHPURL + "?title=Special:Log&type=block&page=User:" + userenc + "\">block log</a>)";
-        }
-        catch (IOException ex)
-        {
-            throw new UncheckedIOException(ex); // seriously?
-        }
+        String indexPHPURL = wiki.getIndexPhpUrl();
+        username = WikitextUtils.recode(username);
+        String userenc = URLEncoder.encode(username, StandardCharsets.UTF_8);
+        return pageutils.generatePageLink("User:" + username, username) + " ("
+            +  pageutils.generatePageLink("User talk:" + username, "talk") + " | "
+            +  pageutils.generatePageLink("Special:Contributions/" + username, "contribs") + " | "
+            +  pageutils.generatePageLink("Special:DeletedContributions/" + username, "deleted contribs") + " | "
+            +  "<a href=\"" + indexPHPURL + "?title=Special:Log&user=" + userenc + "\">logs</a> | "
+            +  pageutils.generatePageLink("Special:Block/" + username, "block") + " | "
+            +  "<a href=\"" + indexPHPURL + "?title=Special:Log&type=block&page=User:" + userenc + "\">block log</a>)";
     }
     
     /**
@@ -104,21 +99,28 @@ public class Users
      */
     public static String generateWikitextSummaryLinks(String username)
     {
-        try
-        {
-            String userenc = URLEncoder.encode(username, "UTF-8");
-            return "* [[User:" + username + "|" + username + "]] (" 
-                +  "[[User talk:" + username + "|talk]] | "
-                +  "[[Special:Contributions/" + username + "|contribs]] | "
-                +  "[[Special:DeletedContributions/" + username + "|deleted contribs]] | "
-                +  "[{{fullurl:Special:Log|user=" + userenc + "}} logs] | "
-                +  "[[Special:Block/" + username + "|block]] | "
-                +  "[{{fullurl:Special:Log|type=block&page=User:" + userenc + "}} block log])\n";
-        }
-        catch (IOException ex)
-        {
-            throw new UncheckedIOException(ex); // seriously?
-        }
+        String userenc = URLEncoder.encode(username, StandardCharsets.UTF_8);
+        return "* [[User:" + username + "|" + username + "]] (" 
+            +  "[[User talk:" + username + "|talk]] | "
+            +  "[[Special:Contributions/" + username + "|contribs]] | "
+            +  "[[Special:DeletedContributions/" + username + "|deleted contribs]] | "
+            +  "[{{fullurl:Special:Log|user=" + userenc + "}} logs] | "
+            +  "[[Special:Block/" + username + "|block]] | "
+            +  "[{{fullurl:Special:Log|type=block&page=User:" + userenc + "}} block log])\n";
+    }
+
+    /**
+     *  Creates user links in wikitext of the form <samp>User (talk &middot; 
+     *  contribs)</samp>.
+     *  @param username the username
+     *  @return the generated wikitext
+     *  @see #generateHTMLSummaryLinksShort(String) 
+     */
+    public static String generateWikitextSummaryLinksShort(String username)
+    {
+        return "[[User:" + username + "|" + username + "]] (" 
+            +  "[[User talk:" + username + "|talk]] &middot; "
+            +  "[[Special:Contributions/" + username + "|contribs]])";
     }
     
     /**
@@ -134,11 +136,8 @@ public class Users
      */
     public List<Wiki.Revision> createdPages(List<String> users, Wiki.RequestHelper rh) throws IOException
     {
-        Map<String, Boolean> options = new HashMap<>();
-        options.put("new", Boolean.TRUE);
-        if (rh == null)
-            rh = wiki.new RequestHelper();
-        rh = rh.filterBy(options);
+        rh = Objects.requireNonNullElse(rh, wiki.new RequestHelper())
+            .filterBy(Map.of("new", Boolean.TRUE));
         List<List<Wiki.Revision>> contribs = wiki.contribs(users, null, rh);
         List<Wiki.Revision> ret = new ArrayList<>();
         for (List<Wiki.Revision> rev : contribs)
@@ -159,11 +158,8 @@ public class Users
      */
     public Map<Wiki.Revision, String> createdPagesWithText(List<String> users, Wiki.RequestHelper rh) throws IOException
     {
-        Map<String, Boolean> options = new HashMap<>();
-        options.put("new", Boolean.TRUE);
-        if (rh == null)
-            rh = wiki.new RequestHelper();
-        rh = rh.filterBy(options);
+        rh = Objects.requireNonNullElse(rh, wiki.new RequestHelper())
+            .filterBy(Map.of("new", Boolean.TRUE));
         List<List<Wiki.Revision>> contribs = wiki.contribs(users, null, rh);
         
         // get text of all pages
@@ -173,13 +169,37 @@ public class Users
         List<String> pages = new ArrayList<>();
         for (Wiki.Revision revision : temp)
             pages.add(revision.getTitle());
-        String[] pagetexts = wiki.getPageText(pages.toArray(new String[0]));        
+        List<String> pagetexts = wiki.getPageText(pages);
         Map<Wiki.Revision, String> ret = new HashMap<>();
         for (int i = 0; i < temp.size(); i++)
         {
             Wiki.Revision revision = temp.get(i);
-            ret.putIfAbsent(revision, pagetexts[i]);
+            ret.putIfAbsent(revision, pagetexts.get(i));
         }
         return ret;
+    }
+    
+    /**
+     *  Generates a CLI login prompt and logs in if successful. Exits with exit
+     *  code 1 if login is unsuccessful or code 2 if a network error occurs.
+     */
+    public void cliLogin()
+    {
+        try
+        {
+            Console console = System.console();
+            wiki.login(console.readLine("Username: "), console.readPassword("Password: "));
+        }
+        catch (FailedLoginException ex)
+        {
+            System.err.println("Invalid username or password.");
+            System.exit(1);
+        }
+        catch (IOException ex)
+        {
+            System.err.println("A network error occurred.");
+            ex.printStackTrace();
+            System.exit(2);
+        }
     }
 }

@@ -106,7 +106,7 @@ public class MathsAndStatsTest
     public void max()
     {
         assertNull(MathsAndStats.max(Collections.emptyList()), "empty input");
-        List<Duration> durations = Arrays.asList(Duration.ofDays(1), Duration.ofDays(5), Duration.ofSeconds(30));
+        List<Duration> durations = List.of(Duration.ofDays(1), Duration.ofDays(5), Duration.ofSeconds(30));
         assertEquals(durations.get(1), MathsAndStats.max(durations));
     }
     
@@ -115,10 +115,10 @@ public class MathsAndStatsTest
     {
         BinaryOperator<Integer> interpolator = (n1, n2) -> ((n1 + n2)/ 2);
         assertNull(MathsAndStats.median(Collections.emptyList(), interpolator), "zero length = null");
-        assertEquals(Integer.valueOf(1), MathsAndStats.median(Arrays.asList(1), interpolator), "1 item");
-        assertEquals(Integer.valueOf(2), MathsAndStats.median(Arrays.asList(1, 3), interpolator), "2 items");
-        assertEquals(Integer.valueOf(3), MathsAndStats.median(Arrays.asList(1, 3, 5), interpolator), "3 items");
-        assertEquals(Integer.valueOf(4), MathsAndStats.median(Arrays.asList(1, 3, 5, 7), interpolator), "4 items");
+        assertEquals(Integer.valueOf(1), MathsAndStats.median(List.of(1), interpolator), "1 item");
+        assertEquals(Integer.valueOf(2), MathsAndStats.median(List.of(1, 3), interpolator), "2 items");
+        assertEquals(Integer.valueOf(3), MathsAndStats.median(List.of(1, 3, 5), interpolator), "3 items");
+        assertEquals(Integer.valueOf(4), MathsAndStats.median(List.of(1, 3, 5, 7), interpolator), "4 items");
     }
     
     @Test
@@ -142,5 +142,24 @@ public class MathsAndStatsTest
         
         assertEquals("10d", MathsAndStats.formatDuration(Duration.ofSeconds(864000)));
         assertEquals("-15d", MathsAndStats.formatDuration(Duration.ofSeconds(-86400*15)));
+    }
+    
+    @Test
+    public void levenshteinDistanceTest()
+    {
+        // empty string handling
+        assertEquals(4, MathsAndStats.levenshteinDistance("", "blah"));
+        assertEquals(4, MathsAndStats.levenshteinDistance("blah", ""));
+        
+        // additions and deletions = +1 per character
+        assertEquals(5, MathsAndStats.levenshteinDistance("Test", "Test more"));
+        assertEquals(5, MathsAndStats.levenshteinDistance("Test more", "Test"));
+        
+        // substitutions = +1 each
+        assertEquals(3, MathsAndStats.levenshteinDistance("111222333444555", "11_22233_4445_5"));
+        
+        // and finally, the examples given
+        assertEquals(3, MathsAndStats.levenshteinDistance("kitten", "sitting"));
+        assertEquals(3, MathsAndStats.levenshteinDistance("Sunday", "Saturday"));
     }
 }

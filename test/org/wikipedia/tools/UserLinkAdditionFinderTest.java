@@ -22,7 +22,6 @@ package org.wikipedia.tools;
 
 import java.io.IOException;
 import java.time.*;
-import java.time.format.*;
 import java.util.*;
 import java.util.stream.*;
 import org.junit.jupiter.api.*;
@@ -64,11 +63,11 @@ public class UserLinkAdditionFinderTest
         // https://en.wikipedia.org/wiki/Special:Contributions/EmanningKBRA (all link adding edits revision deleted)
         // remainder of users with one edit, one link
 
-        List<String> users = Arrays.asList("Helonty", "ReteNsep", "Reyeilint", "Shittipa", "EDPerfect");
+        List<String> users = List.of("Helonty", "ReteNsep", "Reyeilint", "Shittipa", "EDPerfect");
         Map<Wiki.Revision, List<String>> linksadded = finder_en.getLinksAdded(users, null);
         Set<String> actual = linksadded.keySet().stream().map(rev -> String.valueOf(rev.getID())).collect(Collectors.toSet());
         assertEquals(4, actual.size());
-        assertTrue(actual.containsAll(Arrays.asList("834061933", "823758919", "833871994", "834097191")));
+        assertTrue(actual.containsAll(List.of("834061933", "823758919", "833871994", "834097191")));
         for (Map.Entry<Wiki.Revision, List<String>> entry : linksadded.entrySet())
         {
             Wiki.Revision revision = entry.getKey();
@@ -77,16 +76,16 @@ public class UserLinkAdditionFinderTest
 
             // https://en.wikipedia.org/wiki/Special:Diff/823758919
             if (id == 823758919L)
-                assertEquals(Arrays.asList("http://gastroinflorida.com/"), links);
+                assertEquals(List.of("http://gastroinflorida.com/"), links);
             // https://en.wikipedia.org/wiki/Special:Diff/833871994
             else if (id == 833871994L)
-                assertEquals(Arrays.asList("http://www.insurancepanda.com/"), links);
+                assertEquals(List.of("http://www.insurancepanda.com/"), links);
             // https://en.wikipedia.org/wiki/Special:Diff/834097191
             else if (id == 834097191L)
-                assertEquals(Arrays.asList("https://www.sfspa.com/"), links);
+                assertEquals(List.of("https://www.sfspa.com/"), links);
             // https://en.wikipedia.org/wiki/Special:Diff/834061933
             else if (id == 834061933L)
-                assertEquals(Arrays.asList("http://www.drgoldman.com/"), links);
+                assertEquals(List.of("http://www.drgoldman.com/"), links);
         }
         
         // check date cutoff (all users indeffed prior to this date, therefore empty)
@@ -97,32 +96,32 @@ public class UserLinkAdditionFinderTest
     @Test
     public void parseDiff() throws IOException
     {
-        Wiki.Revision[] revs = testWiki.getRevisions(new long[]
+        List<Wiki.Revision> revs = testWiki.getRevisions(new long[]
         {
             244169L, 244170L, 244171L, 320307L, 350372L
         });
 
         // https://test.wikipedia.org/wiki/Special:Diff/244169
-        List<String> links = finder_test.parseDiff(revs[0]);
+        List<String> links = finder_test.parseDiff(revs.get(0));
         assertNotNull(links);
         assertEquals(1, links.size());
         assertEquals("http://spam.example.com", links.get(0));
 
         // https://test.wikipedia.org/wiki/Special:Diff/244170
-        links = finder_test.parseDiff(revs[1]);
+        links = finder_test.parseDiff(revs.get(1));
         assertEquals("https://en.wikipedia.org", links.get(0));
 
         // https://test.wikipedia.org/wiki/Special:Diff/244171
-        links = finder_test.parseDiff(revs[2]);
+        links = finder_test.parseDiff(revs.get(2));
         assertEquals("http://www.example.net", links.get(0));
 
         // dummy edit
         // https://test.wikipedia.org/wiki/Special:Diff/320307
-        links = finder_test.parseDiff(revs[3]);
-        assertEquals(0, links.size());
+        links = finder_test.parseDiff(revs.get(3));
+        assertTrue(links.isEmpty());
 
         // https://test.wikipedia.org/wiki/Special:Diff/350372
-        links = finder_test.parseDiff(revs[4]);
+        links = finder_test.parseDiff(revs.get(4));
         assertEquals("http://template.example.com", links.get(0));
     }
 }

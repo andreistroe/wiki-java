@@ -6,21 +6,14 @@
     Affero GNU GPL version 3 or later, see <https://www.gnu.org/licenses/agpl.html> 
     for details. There is NO WARRANTY, to the extent permitted by law.
 -->
-
+<%@ include file="security.jspf" %>
 <%
     request.setAttribute("toolname", "Cross-wiki linksearch");
     request.setAttribute("scripts", new String[] { "common.js", "XWikiLinksearch.js" });
 
-    String mode = request.getParameter("mode");
-    if (mode == null)
-        mode = "multi";
-
+    String mode = Objects.requireNonNullElse(request.getParameter("mode"), "multi");
     String domain = ServletUtils.sanitizeForAttribute(request.getParameter("link"));
-    
-    String set = request.getParameter("set");
-    if (set == null)
-        set = "top20";
-
+    String set = Objects.requireNonNullElse(request.getParameter("set"), "top20");
     String wikiinput = request.getParameter("wiki");
     if (wikiinput != null)
         wikiinput = ServletUtils.sanitizeForAttribute(wikiinput);
@@ -32,7 +25,7 @@
     boolean mainns = temp != null && temp.equals("0");
     int[] ns = mainns ? new int[] { Wiki.MAIN_NAMESPACE } : new int[0];
 %>
-<%@ include file="header.jsp" %>
+<%@ include file="header.jspf" %>
 
 <p>
 This tool searches various Wikimedia projects for a specific link. Enter a 
@@ -45,7 +38,7 @@ reasons, results are limited to between 500 and 1000 links per wiki.
 <tr>
     <td><input id="radio_multi" type=radio name=mode value=multi<%= mode.equals("multi") ?
          " checked" : "" %>>
-    <td>Wikis to search:
+    <td><label for="radio_multi">Wikis to search:</label>
     <td><select name=set id=set<%= mode.equals("multi") ? "" : " disabled" %>>
             <option value="top20"<%= set.equals("top20") ? " selected" : ""%>>Top 20 Wikipedias</option>
             <option value="top40"<%= set.equals("top40") ? " selected" : ""%>>Top 40 Wikipedias</option>
@@ -55,7 +48,7 @@ reasons, results are limited to between 500 and 1000 links per wiki.
 <tr>
     <td><input id="radio_single" type=radio name=mode value=single<%= mode.equals("single") ?
          " checked" : "" %>>
-    <td>Single wiki:
+    <td><label for="radio_single">Single wiki:</label>
     <td><input type=text id=wiki name=wiki <%= mode.equals("single") ? "required value=" + 
         wikiinput : "disabled" %>>
         
@@ -65,13 +58,15 @@ reasons, results are limited to between 500 and 1000 links per wiki.
         
 <tr>
     <td colspan=2>Additional protocols:
-    <td><input type=checkbox name=https value=1<%= (https || domain.isEmpty()) ?
-        " checked" : "" %>>HTTPS
-        <input type=checkbox name=mailto value=1<%= mailto ? " checked" : "" %>>mailto
+    <td><input type=checkbox name=https id="https" value=1<%= (https || domain.isEmpty()) ?
+        " checked" : "" %>>
+        <label for="https">HTTPS</label>
+        <input type=checkbox name=mailto id="mailto" value=1<%= mailto ? " checked" : "" %>>
+        <label for="mailto">mailto</label>
 
 <tr>
-    <td><input type=checkbox name=ns value=0<%= mainns ? " checked" : "" %>>
-    <td colspan=3>Main namespace only? (May be unreliable.)
+    <td><input type=checkbox name=ns id="main_ns" value=0<%= mainns ? " checked" : "" %>>
+    <td colspan=3><label for="main_ns">Main namespace only? (May be unreliable.)</label>
 
 </table>
 <br>
@@ -83,7 +78,7 @@ reasons, results are limited to between 500 and 1000 links per wiki.
     if (domain.isEmpty())
     {
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
     }
     Map<Wiki, List<String[]>> results = null;
@@ -106,13 +101,13 @@ reasons, results are limited to between 500 and 1000 links per wiki.
             default:
                 request.setAttribute("error", "Invalid wiki set selected!");
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>
 <%
         }
     }
     else if (mode.equals("single"))
         results = AllWikiLinksearch.crossWikiLinksearch(true, 1, domain, 
-            Arrays.asList(Wiki.newSession(wikiinput)), https, mailto, ns);
+            List.of(Wiki.newSession(wikiinput)), https, mailto, ns);
 
     out.println("<hr>");
     for (Map.Entry<Wiki, List<String[]>> entry : results.entrySet())
@@ -131,4 +126,4 @@ reasons, results are limited to between 500 and 1000 links per wiki.
         out.println(pageutils.generatePageLink("Special:Linksearch/https://*." + domain, "HTTPS linksearch") + ").");
     }
 %>
-<%@ include file="footer.jsp" %>
+<%@ include file="footer.jspf" %>

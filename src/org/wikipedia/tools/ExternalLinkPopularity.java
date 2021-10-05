@@ -60,13 +60,13 @@ public class ExternalLinkPopularity
         Wiki wiki = Wiki.newSession(wikistring);
         ExternalLinkPopularity elp = new ExternalLinkPopularity(wiki);
         // meta-domains (edwardbetts.com = {{orphan}}
-        elp.getExcludeList().addAll(Arrays.asList("wmflabs.org", "edwardbetts.com", "archive.org"));
+        elp.getExcludeList().addAll(List.of("wmflabs.org", "edwardbetts.com", "archive.org"));
         elp.setMaxLinks(Integer.parseInt(parsedargs.getOrDefault("--limit", "500")));
         
         List<String> pages = new ArrayList<>();
         String category = parsedargs.get("--category");
         if (category != null)
-            pages.addAll(Arrays.asList(wiki.getCategoryMembers(category, Wiki.MAIN_NAMESPACE)));
+            pages.addAll(wiki.getCategoryMembers(category, Wiki.MAIN_NAMESPACE));
         String article = parsedargs.get("--title");
         if (article != null)
             pages.add(article);
@@ -202,7 +202,8 @@ public class ExternalLinkPopularity
     /**
      *  Determine a list of sites' popularity as external links. Each popularity
      *  score is capped at {@link #getMaxLinks()} because some domains are used 
-     *  very frequently and we don't want to be here forever. 
+     *  very frequently and we don't want to be here forever. The result is 
+     *  sorted by number of links found (least used domains first).
      * 
      *  @param data a list of domains to determine popularity for
      *  @return a Map with domain &#8594; popularity
@@ -231,7 +232,7 @@ public class ExternalLinkPopularity
             lsresults.put(domain, Math.min(count, maxlinks));
         }
         wiki.setQueryLimit(Integer.MAX_VALUE);
-        return lsresults;
+        return ArrayUtils.sortByValue(lsresults, Comparator.naturalOrder());
     }
     
     public String exportResultsAsWikitext(Map<String, Map<String, List<String>>> urldata, Map<String, Integer> popularity)

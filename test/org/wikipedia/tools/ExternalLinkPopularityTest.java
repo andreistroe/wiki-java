@@ -59,7 +59,7 @@ public class ExternalLinkPopularityTest
         assertEquals(limit, elp.getMaxLinks());
         
         // check that the limit actually does anything
-        Map<String, Integer> results = elp.determineLinkPopularity(Arrays.asList("wikipedia.org"));
+        Map<String, Integer> results = elp.determineLinkPopularity(List.of("wikipedia.org"));
         assertEquals(1, results.size());
         assertEquals(limit, results.get("wikipedia.org").intValue());
     }
@@ -67,9 +67,9 @@ public class ExternalLinkPopularityTest
     @Test
     public void getExcludeList() throws Exception
     {
-        elp.getExcludeList().addAll(Arrays.asList("wikipedia.org", "example."));
+        elp.getExcludeList().addAll(List.of("wikipedia.org", "example."));
         String article = "User:MER-C/UnitTests/Linkfinder";
-        Map<String, Map<String, List<String>>> results = elp.fetchExternalLinks(Arrays.asList(article));
+        Map<String, Map<String, List<String>>> results = elp.fetchExternalLinks(List.of(article));
         assertTrue(results.get(article).isEmpty());
     }
 
@@ -77,24 +77,31 @@ public class ExternalLinkPopularityTest
     public void fetchExternalLinks() throws Exception
     {
         String article = "User:MER-C/UnitTests/Linkfinder";
-        Map<String, Map<String, List<String>>> results = elp.fetchExternalLinks(Arrays.asList(article));
+        Map<String, Map<String, List<String>>> results = elp.fetchExternalLinks(List.of(article));
         Map<String, List<String>> urlsbydomain = results.get(article);
         Set<String> keyset = urlsbydomain.keySet();
         assertEquals(3, keyset.size());
-        assertTrue(keyset.containsAll(Arrays.asList("example.net", "wikipedia.org", "example.com")));
-        assertEquals(Arrays.asList("http://www.example.net"), urlsbydomain.get("example.net"));
-        assertEquals(Arrays.asList("https://en.wikipedia.org"), urlsbydomain.get("wikipedia.org"));
-        assertEquals(Arrays.asList("http://spam.example.com"), urlsbydomain.get("example.com"));
+        assertTrue(keyset.containsAll(List.of("example.net", "wikipedia.org", "example.com")));
+        assertEquals(List.of("http://www.example.net"), urlsbydomain.get("example.net"));
+        assertEquals(List.of("https://en.wikipedia.org"), urlsbydomain.get("wikipedia.org"));
+        assertEquals(List.of("http://spam.example.com"), urlsbydomain.get("example.com"));
     }
     
     @Test
     public void determineLinkPopularity() throws Exception
     {
-        List<String> data = Arrays.asList("wikipedia.org", "obviously.invalid", "wikimedia.org");
+        List<String> data = List.of("wikipedia.org", "obviously.invalid", "wikimedia.org");
         Map<String, Integer> results = elp.determineLinkPopularity(data);
         assertEquals(3, results.size());
-        assertEquals(500, results.get("wikipedia.org").intValue());
-        assertEquals(0, results.get("obviously.invalid").intValue());
-        assertEquals(500, results.get("wikimedia.org").intValue());        
+        int count = 0;
+        for (var entry : results.entrySet())
+        {
+            switch (count++)
+            {
+                case 0: assertEquals(Map.entry("obviously.invalid", 0), entry); break;
+                case 1: assertEquals(Map.entry("wikimedia.org", 500), entry); break;
+                case 2: assertEquals(Map.entry("wikipedia.org", 500), entry); break;
+            }
+        }
     }
 }

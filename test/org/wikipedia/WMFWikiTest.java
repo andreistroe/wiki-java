@@ -79,7 +79,7 @@ public class WMFWikiTest
             () -> enWiki.getGlobalUsage("Not an image"),
             "tried to get global usage for a non-file page");
         // YARR!
-        assertEquals(0, enWiki.getGlobalUsage("File:Pirated Movie Full HD Stream.mp4").length, "unused, non-existing file");
+        assertTrue(enWiki.getGlobalUsage("File:Pirated Movie Full HD Stream.mp4").isEmpty(), "unused, non-existing file");
     }
     
     /**
@@ -105,13 +105,16 @@ public class WMFWikiTest
         assertEquals("Catopsbaatar", ale.getTitle());
         assertEquals(OffsetDateTime.parse("2018-04-05T22:58:14Z"), ale.getTimestamp());
         assertEquals("edit", ale.getAction());
-        // TODO: test details when they are overhauled
+        Map<String, String> details = ale.getDetails();
+        assertEquals("1", details.get("filter_id"));
+        assertEquals("834477714", details.get("revid"));
+        assertEquals("", details.get("result"));
     }
     
     @Test
     public void getLedeAsPlainText() throws Exception
     {
-        List<String> pages = Arrays.asList("Java", "Create a page", "Albert Einstein");
+        List<String> pages = List.of("Java", "Create a page", "Albert Einstein");
         List<String> text = enWiki.getLedeAsPlainText(pages);
         // Cannot assert more than the first two words because the result is
         // non-deterministic. Test is potentially fragile.
@@ -123,7 +126,7 @@ public class WMFWikiTest
     @Test
     public void getPlainText() throws Exception
     {
-        List<String> pages = Arrays.asList("Java", "Create a page", "Albert Einstein");
+        List<String> pages = List.of("Java", "Create a page", "Albert Einstein");
         List<String> shorttext = enWiki.getLedeAsPlainText(pages);
         List<String> text = enWiki.getPlainText(pages);
         assertTrue(text.get(0).startsWith(shorttext.get(0)));
@@ -132,48 +135,23 @@ public class WMFWikiTest
     }
     
     @Test
-    public void getGlobalUserInfo() throws Exception
+    public void getWikidataItems() throws Exception
     {
-        // locked account with local block
-        // https://meta.wikimedia.org/w/index.php?title=Special:CentralAuth&target=Uruguymma
-        Map<String, Object> guserinfo = WMFWiki.getGlobalUserInfo("Uruguymma");
-        assertTrue((Boolean)guserinfo.get("locked"));
-        assertEquals(38, guserinfo.get("editcount"));
-        assertEquals(OffsetDateTime.parse("2016-09-21T13:59:30Z"), guserinfo.get("registration"));
-        assertEquals(Collections.emptyList(), guserinfo.get("groups"));
-        assertEquals(Collections.emptyList(), guserinfo.get("rights"));
-        assertEquals("enwiki", guserinfo.get("home"));
-        
-        // enwiki
-        Map luserinfo = (Map)guserinfo.get("enwiki");
-        assertEquals("https://en.wikipedia.org", luserinfo.get("url"));
-        assertEquals(23, luserinfo.get("editcount"));
-        assertEquals(OffsetDateTime.parse("2016-09-21T13:59:29Z"), luserinfo.get("registration"));
-        assertEquals(Collections.emptyList(), luserinfo.get("groups"));
-        assertTrue((Boolean)luserinfo.get("blocked"));
-        assertNull(luserinfo.get("blockexpiry"));
-        assertEquals("Abusing [[WP:Sock puppetry|multiple accounts]]: Please see: "
-            + "[[w:en:Wikipedia:Sockpuppet investigations/Japanelemu]]", luserinfo.get("blockreason"));
-        
-        // eswiki
-        luserinfo = (Map)guserinfo.get("eswiki");
-        assertEquals("https://es.wikipedia.org", luserinfo.get("url"));
-        assertEquals(15, luserinfo.get("editcount"));
-        assertEquals(OffsetDateTime.parse("2017-05-31T13:45:00Z"), luserinfo.get("registration"));
-        assertEquals(Collections.emptyList(), luserinfo.get("groups"));
-        assertFalse((Boolean)luserinfo.get("blocked"));
-        assertNull(luserinfo.get("blockexpiry"));
-        assertNull(luserinfo.get("blockreason"));
-        
-        // global and local groups set
-        // https://meta.wikimedia.org/wiki/Special:CentralAuth?target=Jimbo+Wales
-        guserinfo = WMFWiki.getGlobalUserInfo("Jimbo Wales");
-        assertEquals(Arrays.asList("founder"), guserinfo.get("groups"));
-        luserinfo = (Map)guserinfo.get("enwiki");
-        assertEquals(Arrays.asList("checkuser", "founder", "oversight", "sysop"), luserinfo.get("groups"));
-        
-        // IP address (throws UnknownError)
-        // guserinfo = WMFWiki.getGlobalUserInfo("127.0.0.1");
-        // assertNull(guserinfo);
+        List<String> input = List.of("Blah", "Albert Einstein", "Create a page", "Test", 
+            "Albert_Einstein", "User:MER-C");
+        List<String> actual = enWiki.getWikidataItems(input);
+        assertEquals("Q527633", actual.get(0));
+        assertEquals("Q937", actual.get(1));
+        assertNull(actual.get(2)); // local page doesn't exist
+        assertEquals("Q224615", actual.get(3));
+        assertEquals("Q937", actual.get(4));
+        assertNull(actual.get(5)); // local page exists, but no corresponding WD item
+    }
+    
+    @Test
+    public void triageNewPage() throws Exception
+    {
+        assertThrows(SecurityException.class, 
+            () -> enWiki.triageNewPage(64721139L, "Testing (should fail)", true, true));
     }
 }
