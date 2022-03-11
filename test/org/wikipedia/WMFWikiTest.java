@@ -42,13 +42,6 @@ public class WMFWikiTest
         enWiki.setMaxLag(-1);
     }
     
-    @Test
-    public void isSpamBlacklisted() throws Exception
-    {
-        assertFalse(enWiki.isSpamBlacklisted("example.com"));
-        assertTrue(enWiki.isSpamBlacklisted("youtu.be"));
-    }
-    
     /**
      *  Attempts to access a privileged log that isn't available in vanilla
      *  MediaWiki.
@@ -58,18 +51,6 @@ public class WMFWikiTest
     public void getLogEntries() throws Exception
     {
         assertEquals(Collections.emptyList(), enWiki.getLogEntries(WMFWiki.SPAM_BLACKLIST_LOG, null, null));
-    }
-    
-    @Test
-    public void requiresExtension()
-    {
-        // https://en.wikipedia.org/wiki/Special:Version
-        enWiki.requiresExtension("SpamBlacklist");
-        enWiki.requiresExtension("CheckUser");
-        enWiki.requiresExtension("Abuse Filter");
-        assertThrows(UnsupportedOperationException.class,
-            () -> enWiki.requiresExtension("This extension does not exist."),
-            "required a non-existing extension");        
     }
     
     @Test
@@ -132,20 +113,6 @@ public class WMFWikiTest
         assertTrue(text.get(0).startsWith(shorttext.get(0)));
         assertTrue(text.get(1) == null);
         assertTrue(text.get(2).startsWith(shorttext.get(2)));
-    }
-    
-    @Test
-    public void getWikidataItems() throws Exception
-    {
-        List<String> input = List.of("Blah", "Albert Einstein", "Create a page", "Test", 
-            "Albert_Einstein", "User:MER-C");
-        List<String> actual = enWiki.getWikidataItems(input);
-        assertEquals("Q527633", actual.get(0));
-        assertEquals("Q937", actual.get(1));
-        assertNull(actual.get(2)); // local page doesn't exist
-        assertEquals("Q224615", actual.get(3));
-        assertEquals("Q937", actual.get(4));
-        assertNull(actual.get(5)); // local page exists, but no corresponding WD item
     }
     
     @Test

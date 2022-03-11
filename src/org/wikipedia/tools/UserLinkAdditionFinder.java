@@ -38,6 +38,7 @@ public class UserLinkAdditionFinder
 {
     private static int threshold = 50;
     private final WMFWiki wiki;
+    private static final WMFWikiFarm sessions = WMFWikiFarm.instance();
     
     /**
      *  Runs this program.
@@ -61,7 +62,7 @@ public class UserLinkAdditionFinder
             .addSection("If a file is not specified, a dialog box will prompt for one.")
             .parse(args);
 
-        WMFWiki thiswiki = WMFWiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
+        WMFWiki thiswiki = sessions.sharedSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
         boolean linksearch = parsedargs.containsKey("--linksearch");
         boolean removeblacklisted = parsedargs.containsKey("--removeblacklisted");
         String datestring = parsedargs.get("--fetchafter");
@@ -114,13 +115,14 @@ public class UserLinkAdditionFinder
         
         // remove blacklisted links
         Collection<String> domains = new TreeSet(linkdomains.values());
+        ExternalLinks el = ExternalLinks.of(thiswiki);
         if (removeblacklisted)
         {
             Iterator<String> iter = domains.iterator();
             while (iter.hasNext())
             {
                 String link = iter.next();
-                if (thiswiki.isSpamBlacklisted(linkdomains.get(link)))
+                if (el.isSpamBlacklisted(linkdomains.get(link)))
                     iter.remove();
             }
         }
@@ -325,7 +327,7 @@ public class UserLinkAdditionFinder
 
         // some HTML strings we are looking for
         // see https://en.wikipedia.org/w/api.php?action=compare&fromrev=77350972&torelative=prev
-        String diffaddedbegin = "<td class=\"diff-addedline\">";
+        String diffaddedbegin = "<td class=\"diff-addedline diff-side-added\">";
         String diffaddedend = "</td>";
         String deltabegin = "<ins class=\"diffchange diffchange-inline\">";
         String deltaend = "</ins>";

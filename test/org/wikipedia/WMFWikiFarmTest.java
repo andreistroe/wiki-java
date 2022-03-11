@@ -33,7 +33,7 @@ import org.junit.jupiter.params.provider.CsvSource;
  */
 public class WMFWikiFarmTest
 {
-    private final WMFWikiFarm sessions = new WMFWikiFarm();
+    private final WMFWikiFarm sessions = WMFWikiFarm.instance();
     
     @ParameterizedTest
     @CsvSource({"enwiki, en.wikipedia.org",  "wikidatawiki, www.wikidata.org",
@@ -96,5 +96,41 @@ public class WMFWikiFarmTest
         WMFWiki wiki1 = sessions.sharedSession("en.wikipedia.org");
         WMFWiki wiki2 = sessions.sharedSession("en.wikipedia.org");
         assertTrue(wiki1 == wiki2); // must be same object
+    }
+    
+    @Test
+    public void instance()
+    {
+        WMFWikiFarm one = WMFWikiFarm.instance();
+        assertEquals(one, sessions);
+    }
+    
+    @Test
+    public void setInitializer()
+    {
+        WMFWikiFarm local = new WMFWikiFarm();
+        local.setInitializer(wiki ->
+        {
+            wiki.setMaxLag(2);
+            wiki.setQueryLimit(498);
+        });
+        WMFWiki test = local.sharedSession("test.wikipedia.org");
+        assertEquals(2, test.getMaxLag());
+        assertEquals(498, test.getQueryLimit());
+    }
+    
+    @Test
+    public void getWikidataItems() throws Exception
+    {
+        List<String> input = List.of("Blah", "Albert Einstein", "Create a page", "Test", 
+            "Albert_Einstein", "User:MER-C");
+        WMFWiki enWiki = sessions.sharedSession("en.wikipedia.org");
+        List<String> actual = sessions.getWikidataItems(enWiki, input);
+        assertEquals("Q527633", actual.get(0));
+        assertEquals("Q937", actual.get(1));
+        assertNull(actual.get(2)); // local page doesn't exist
+        assertEquals("Q224615", actual.get(3));
+        assertEquals("Q937", actual.get(4));
+        assertNull(actual.get(5)); // local page exists, but no corresponding WD item
     }
 }

@@ -1407,6 +1407,24 @@ public class Wiki implements Comparable<Wiki>
         ret.put("jobs", Integer.parseInt(parseAttribute(text, "jobs", 0))); // job queue length
         return ret;
     }
+    
+    /**
+     *  Require the given extension be installed on this wiki, or throw an 
+     *  UnsupportedOperationException if it isn't.
+     *  @param extension the name of the extension to check
+     *  @throws UnsupportedOperationException if that extension is not
+     *  installed on this wiki
+     *  @throws UncheckedIOException if the site info cache is not populated
+     *  and a network error occurs when populating it
+     *  @since 0.37
+     */
+    public void requiresExtension(String extension)
+    {
+        if (!installedExtensions().contains(extension))
+            throw new UnsupportedOperationException("Extension \"" + extension
+                + "\" is not installed on " + getDomain() + ". "
+                + "Please check the extension name and [[Special:Version]].");
+    }
 
     /**
      *  Renders the specified wiki markup as HTML by passing it to the MediaWiki
@@ -1735,7 +1753,8 @@ public class Wiki implements Comparable<Wiki>
      *  is the number of actions tested. 
      *
      *  @param pages the pages to get info for.
-     *  @return (see above), or {@code null} for Special and Media pages.
+     *  @return (see above), or {@code null} for Special and Media pages or
+     *  invalid titles.
      *  The Maps will come out in the same order as the processed array.
      *  @throws IOException if a network error occurs
      *  @since 0.23
@@ -1768,10 +1787,10 @@ public class Wiki implements Comparable<Wiki>
                 String item = line.substring(j, x);
                 Map<String, Object> tempmap = new HashMap<>(15);
 
-                // either Special: or Media:, skip this page
-                if (item.contains("special=\"\""))
-                	continue;
-
+                // skip Special, Media and invalid titles
+                if (item.contains("special=\"\"") || item.contains("invalid=\"\""))
+                    continue;
+                
                 // does the page exist?
                 String parsedtitle = parseAttribute(item, "title", 0);
                 tempmap.put("pagename", parsedtitle);
@@ -1786,7 +1805,7 @@ public class Wiki implements Comparable<Wiki>
                 }
                 else
                 {
-                    tempmap.put("lastedited", null);
+                    tempmap.put("lastpurged", null);
                     tempmap.put("lastrevid", -1L);
                     tempmap.put("size", -1);
                     tempmap.put("pageid", -1);
@@ -1848,6 +1867,65 @@ public class Wiki implements Comparable<Wiki>
         }
         log(Level.INFO, "getPageInfo", "Successfully retrieved page info for " + size + " pages.");
         return Arrays.asList(info);
+    }
+
+    /**
+     * Gets key-value property mappings on a list of pages. Returns:
+     * @param pages the pages to retrieve properties from.
+     * @return a list of properties in key-value format. Special or Media
+     * files and missing or invalid titles are listed as {@code null}.
+     * The Maps will come out in the same order as the processed array.
+     * @throws IOException if a network error occurs
+     * @since 0.38
+     */
+    public List<Map<String, String>> getPageProperties(List<String> pages) throws IOException
+    {
+        Map<String, String> getparams = new HashMap<>();
+        getparams.put("action", "query");
+        getparams.put("prop", "pageprops");
+        Map<String, Object> postparams = new HashMap<>();
+        Map<String, Map<String, String>> metamap = new HashMap<>();
+        // copy because normalization and redirect resolvers overwrites
+        List<String> pages2 = new ArrayList<>(pages);
+        for (String temp : constructTitleString(pages))
+        {
+            postparams.put("titles", temp);
+            String line = makeApiCall(getparams, postparams, "getPageProperties");
+            detectUncheckedErrors(line, null, null);
+            resolveNormalizedParser(pages2, line);
+            if (isResolvingRedirects())
+                resolveRedirectParser(pages2, line);
+
+            for (int j = line.indexOf("<page "); j > 0; j = line.indexOf("<page ", ++j))
+            {
+                String item = line.substring(j, line.indexOf(" />", j));
+
+                 // skip Special, Media, missing and invalid titles
+                if (item.contains("special=\"\"") || item.contains("invalid=\"\"") || item.contains("missing=\"\""))
+                    continue;
+
+                String title = parseAttribute(item, "title", 0);
+                Map<String, String> tempmap = new HashMap<>();
+                if (item.contains("<pageprops "))
+                {
+                    item = item.substring(item.indexOf("<pageprops ") + 11);
+                    for (String attr : item.split("=\".*?\" *"))
+                        tempmap.put(attr, parseAttribute(item, attr, 0));
+                }
+
+                metamap.put(title, tempmap);
+            }
+        }
+
+        Map<String, String>[] props = new HashMap[pages.size()];
+        // Reorder
+        for (int i = 0; i < pages2.size(); i++)
+        {
+            String key = pages2.get(i);
+            props[i] = metamap.get(key);
+        }
+        log(Level.INFO, "getPageProperties", "Successfully retrieved page properties for " + pages.size() + " pages.");
+        return Arrays.asList(props);
     }
 
     /**
@@ -4161,22 +4239,25 @@ public class Wiki implements Comparable<Wiki>
     }
 
     /**
-     *  Gets duplicates of this file. Equivalent to [[Special:FileDuplicateSearch]].
+     *  Gets duplicates of a list of files. Equivalent to [[Special:FileDuplicateSearch]].
      *  Works for, and returns files from external repositories (e.g. Wikimedia
      *  Commons).
      *
-     *  @param file the file for checking duplicates (may contain "File")
-     *  @return the duplicates of that file
+     *  @param files the files for checking duplicates (may contain "File")
+     *  @return the duplicates of those files
      *  @throws IOException or UncheckedIOException if a network error occurs
+     *  @throws IllegalArgumentException if any of the files has an invalid title
      *  @since 0.18
      */
-    public List<String> getDuplicates(String file) throws IOException
+    public List<List<String>> getDuplicates(List<String> files) throws IOException
     {
         Map<String, String> getparams = new HashMap<>();
         getparams.put("prop", "duplicatefiles");
-        getparams.put("titles", "File:" + removeNamespace(normalize(file), FILE_NAMESPACE));
+        List<String> files2 = new ArrayList<>(files.size());
+        for (String file : files)
+            files2.add("File:" + removeNamespace(normalize(file), FILE_NAMESPACE));
 
-        List<String> duplicates = makeListQuery("df", getparams, null, "getDuplicates", -1, (line, results) ->
+        List<List<String>> duplicates = makeVectorizedQuery("df", getparams, files2, "getDuplicates", -1, (line, results) ->
         {
             if (line.contains("missing=\"\""))
                 return;
@@ -4186,8 +4267,7 @@ public class Wiki implements Comparable<Wiki>
                 results.add("File:" + parseAttribute(line, "name", a));
         });
 
-        int size = duplicates.size();
-        log(Level.INFO, "getDuplicates", "Successfully retrieved duplicates of " + file + " (" + size + " files)");
+        log(Level.INFO, "getDuplicates", "Successfully retrieved duplicates of " + files.size() + " files.");
         return duplicates;
     }
 
@@ -8061,6 +8141,7 @@ public class Wiki implements Comparable<Wiki>
     {
         if (limit < 0)
             limit = querylimit;
+        getparams = new HashMap<>(getparams); // ensure this map is mutable
         getparams.put("action", "query");
         List<T> results = new ArrayList<>(1333);
         String limitstring = queryPrefix + "limit";
@@ -8154,6 +8235,7 @@ public class Wiki implements Comparable<Wiki>
     {
         // build the URL
         StringBuilder urlbuilder = new StringBuilder(apiUrl + "?");
+        getparams = new HashMap<>(getparams); // ensure this map is mutable
         getparams.putAll(defaultApiParams);
         for (Map.Entry<String, String> entry : getparams.entrySet())
         {
@@ -8168,10 +8250,11 @@ public class Wiki implements Comparable<Wiki>
         boolean isPOST = (postparams != null && !postparams.isEmpty());
         StringBuilder stringPostBody = new StringBuilder();
         boolean multipart = false;
-        ArrayList<byte[]> multipartPostBody = new ArrayList<>();
+        ByteArrayOutputStream multipartPostBody = new ByteArrayOutputStream();
         String boundary = "----------NEXT PART----------";        
         if (isPOST)
         {
+            postparams = new HashMap<>(postparams); // ensure this map is mutable
             // determine whether this is a multipart post and convert any values
             // to String if necessary
             for (Map.Entry<String, Object> entry : postparams.entrySet())
@@ -8186,24 +8269,22 @@ public class Wiki implements Comparable<Wiki>
             // now we know how we're sending it, construct the post body
             if (multipart)
             {        
-                byte[] nextpart = ("--" + boundary + "\r\n\"Content-Disposition: form-data; name=\\\"\"")
-                    .getBytes(StandardCharsets.UTF_8);
+                String nextpart = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"";
                 for (Map.Entry<String, ?> entry : postparams.entrySet())
                 {
-                    multipartPostBody.add(nextpart);
                     Object value = entry.getValue();
-                    multipartPostBody.add((entry.getKey() + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+                    multipartPostBody.write((nextpart + entry.getKey() + "\"").getBytes(StandardCharsets.UTF_8));
                     if (value instanceof String)
-                        multipartPostBody.add(("Content-Type: text/plain; charset=UTF-8\r\n\r\n" + (String)value + "\r\n")
+                        multipartPostBody.write(("Content-Type: text/plain; charset=UTF-8\r\n\r\n" + (String)value + "\r\n")
                             .getBytes(StandardCharsets.UTF_8));
                     else if (value instanceof byte[])
                     {
-                        multipartPostBody.add("Content-Type: application/octet-stream\r\n\r\n".getBytes(StandardCharsets.UTF_8));
-                        multipartPostBody.add((byte[])value);
-                        multipartPostBody.add("\r\n".getBytes(StandardCharsets.UTF_8));
+                        multipartPostBody.write("Content-Type: application/octet-stream\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+                        multipartPostBody.write((byte[])value);
+                        multipartPostBody.write("\r\n".getBytes(StandardCharsets.UTF_8));
                     }
                 }
-                multipartPostBody.add((boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                multipartPostBody.write((nextpart + "--\r\n").getBytes(StandardCharsets.UTF_8));
             }
             else
             {
@@ -8231,7 +8312,7 @@ public class Wiki implements Comparable<Wiki>
                 if (isPOST)
                 {
                     if (multipart)
-                        connection = connection.POST(HttpRequest.BodyPublishers.ofByteArrays(multipartPostBody))
+                        connection = connection.POST(HttpRequest.BodyPublishers.ofByteArray(multipartPostBody.toByteArray()))
                             .header("Content-Type", "multipart/form-data; boundary=" + boundary);
                     else
                         connection = connection.POST(HttpRequest.BodyPublishers.ofString(stringPostBody.toString()))

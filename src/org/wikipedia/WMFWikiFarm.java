@@ -23,6 +23,8 @@ package org.wikipedia;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.logging.*;
 
 /**
  *  Manages shared WMFWiki sessions and contains methods for dealing with WMF
@@ -33,6 +35,8 @@ import java.util.*;
 public class WMFWikiFarm
 {
     private final HashMap<String, WMFWiki> sessions = new HashMap<>();
+    private static final WMFWikiFarm SHARED_INSTANCE = new WMFWikiFarm();
+    private Consumer<WMFWiki> setupfn;
     
     /**
      *  Computes the domain name (to use in {@link WMFWiki#newSession}) the 
@@ -75,6 +79,16 @@ public class WMFWikiFarm
     }
     
     /**
+     *  Returns a shared session manager. Note that multiple instances - i.e.
+     *  multiple groups of sessions - are still permitted.
+     *  @return a shared session manager
+     */        
+    public static WMFWikiFarm instance()
+    {
+        return SHARED_INSTANCE;
+    }
+    
+    /**
      *  Returns the shared session for a given domain. If a session doesn't 
      *  exist, create it.
      *  @param domain a wiki domain
@@ -85,6 +99,8 @@ public class WMFWikiFarm
         if (sessions.containsKey(domain))
             return sessions.get(domain);
         WMFWiki wiki = WMFWiki.newSession(domain);
+        if (setupfn != null)
+            setupfn.accept(wiki);
         // if wikidata, wikidata.requiresExtension("WikibaseRepository");
         sessions.put(domain, wiki);
         return wiki;
@@ -99,6 +115,17 @@ public class WMFWikiFarm
         Set<WMFWiki> wikis = new HashSet<>();
         sessions.keySet().forEach(domain -> wikis.add(sessions.get(domain)));
         return wikis;
+    }
+    
+    /**
+     *  Sets a function that is called every time a WMFWiki session is created
+     *  with this manager. The sole parameter is the new session. Use for a
+     *  common setup routine.
+     *  @param fn a function that is to be called on all new WMFWiki objects
+     */
+    public void setInitializer(Consumer<WMFWiki> fn)
+    {
+        setupfn = fn;
     }
     
     /**
@@ -134,6 +161,7 @@ public class WMFWikiFarm
      *  are not allowed.
      *  @return user info as described above
      *  @throws IOException if a network error occurs
+     *  @since WMFWiki 0.01
      */
     public Map<String, Object> getGlobalUserInfo(String username) throws IOException
     {
@@ -224,6 +252,100 @@ public class WMFWikiFarm
         }
         ret.put("editcount", globaledits);
         ret.put("wikicount", wikicount);
+        return ret;
+    }
+    
+    /**
+     *  Returns the list of publicly readable and editable wikis operated by the
+     *  Wikimedia Foundation.
+     *  @return (see above)
+     *  @throws IOException if a network error occurs
+     *  @since WMFWiki 0.01
+     */
+    public List<WMFWiki> getSiteMatrix() throws IOException
+    {
+        Map<String, String> getparams = new HashMap<>();
+        getparams.put("action", "sitematrix");
+        WMFWiki meta = sharedSession("meta.wikimedia.org");
+        String line = meta.makeApiCall(getparams, null, "WMFWikiFarm.getSiteMatrix");
+        meta.detectUncheckedErrors(line, null, null);
+        List<WMFWiki> wikis = new ArrayList<>(1000);
+
+        // form: <special url="http://wikimania2007.wikimedia.org" code="wikimania2007" fishbowl="" />
+        // <site url="http://ab.wiktionary.org" code="wiktionary" closed="" />
+        for (int x = line.indexOf("url=\""); x >= 0; x = line.indexOf("url=\"", x))
+        {
+            int a = line.indexOf("https://", x) + 8;
+            int b = line.indexOf('\"', a);
+            int c = line.indexOf("/>", b);
+            x = c;
+            
+            // check for closed/fishbowl/private wikis
+            String temp = line.substring(b, c);
+            if (temp.contains("closed=\"\"") || temp.contains("private=\"\"") || temp.contains("fishbowl=\"\""))
+                continue;
+            wikis.add(sharedSession(line.substring(a, b)));
+        }
+        int size = wikis.size();
+        Logger temp = Logger.getLogger("wiki");
+        temp.log(Level.INFO, "WMFWikiFarm.getSiteMatrix", "Successfully retrieved site matrix (" + size + " + wikis).");
+        return wikis;
+    }
+    
+    /**
+     *  Returns the Wikidata items corresponding to the given titles.
+     *  @param wiki the wiki where the titles are hosted
+     *  @param titles a list of page names
+     *  @return the corresponding Wikidata items, or null if either the Wikidata
+     *  item or the local article doesn't exist
+     *  @throws IOException if a network error occurs
+     */
+    public List<String> getWikidataItems(WMFWiki wiki, List<String> titles) throws IOException
+    {
+        String dbname = (String)wiki.getSiteInfo().get("dbname");
+        Map<String, String> getparams = new HashMap<>();
+        getparams.put("action", "wbgetentities");
+        getparams.put("sites", dbname);
+        
+        // WORKAROUND: this module doesn't accept mixed GET/POST requests
+        // often need to slice up titles into smaller chunks than slowmax (here 25)
+        // FIXME: replace with constructTitleString when Wikidata is behaving correctly
+        TreeSet<String> ts = new TreeSet<>();
+        for (String title : titles)
+            ts.add(wiki.normalize(title));
+        List<String> titles_enc = new ArrayList<>(ts);
+        ArrayList<String> titles_chunked = new ArrayList<>();
+        int count = 0;
+        do
+        {
+            titles_chunked.add(String.join("|", 
+                titles_enc.subList(count, Math.min(titles_enc.size(), count + 25))));
+            count += 25;
+        }
+        while (count < titles_enc.size());
+        
+        Map<String, String> results = new HashMap<>();
+        WMFWiki wikidata_l = sharedSession("www.wikidata.org");
+        for (String chunk : titles_chunked)
+        {
+            getparams.put("titles", chunk);
+            String line = wikidata_l.makeApiCall(getparams, null, "getWikidataItem");
+            wikidata_l.detectUncheckedErrors(line, null, null);
+            String[] entities = line.split("<entity ");
+            for (int i = 1; i < entities.length; i++)
+            {
+                if (entities[i].contains("missing=\"\""))
+                    continue;
+                String wdtitle = wiki.parseAttribute(entities[i], " id", 0);
+                int index = entities[i].indexOf("\"" + dbname + "\"");
+                String localtitle = wiki.parseAttribute(entities[i], "title", index);
+                results.put(localtitle, wdtitle);
+            }
+        }
+        // reorder
+        List<String> ret = new ArrayList<>();
+        for (String title : titles)
+            ret.add(results.get(wiki.normalize(title)));
         return ret;
     }
 }
