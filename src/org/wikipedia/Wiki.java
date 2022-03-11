@@ -6509,7 +6509,7 @@ public class Wiki implements Comparable<Wiki>
      *  @throws IOException if a network error occurs
      *  @since 0.35
      */
-    protected List<Revision> recentChanges(Wiki.RequestHelper helper, String rctype) throws IOException
+    public List<Revision> recentChanges(Wiki.RequestHelper helper, String rctype) throws IOException
     {
         int limit = -1;
         Map<String, String> getparams = new HashMap<>();
