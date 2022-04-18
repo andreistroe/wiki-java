@@ -25,6 +25,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.ResolverStyle;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.HashSet;
@@ -240,7 +243,7 @@ public class WikibaseClaimFactory {
                                     }
 
                                 } else {
-                                    LocalDate date = LocalDate.parse(iso8601time.substring(1, iso8601time.indexOf('T')));
+                                    LocalDate date = LocalDate.parse(iso8601time.substring(1, iso8601time.indexOf('T')), DateTimeFormatter.ISO_LOCAL_DATE.withResolverStyle(ResolverStyle.SMART));
                                     time.setDate(date);
                                 }
                                 time.setBefore(
