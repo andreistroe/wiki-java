@@ -181,7 +181,13 @@ public class WikibaseClaimFactory {
                         String urlValue = datavalueNode.getAttributes().getNamedItem("value").getNodeValue();
                         String decUrlValue = URLDecoder.decode(urlValue, StandardCharsets.UTF_8.name());
                         URL decUrl = new URL(decUrlValue);
-                        URI uri = decUrlValue.contains("/") ? new URI(decUrl.getProtocol(), decUrl.getUserInfo(), decUrl.getHost(), decUrl.getPort(), decUrl.getPath(), decUrl.getQuery(), decUrl.getRef()) : decUrl.toURI();
+                        URI uri = null;
+                        try {
+                            uri = decUrlValue.contains("/") ? new URI(decUrl.getProtocol(), decUrl.getUserInfo(), decUrl.getHost(), decUrl.getPort(), decUrl.getPath(), decUrl.getQuery(), decUrl.getRef()) : decUrl.toURI();
+                        } catch (RuntimeException e) {
+                            uri = decUrl.toURI();
+                        }
+                            
                         snak.setData(new URLData(uri));
                     } catch (Exception e) {
                         throw new WikibaseException(e);
