@@ -90,6 +90,10 @@ public class Wikibase extends Wiki {
      */
     public Entity getWikibaseItemBySiteAndTitle(final String site, final String pageName)
         throws IOException, WikibaseException {
+        
+        if ("dwiki".equalsIgnoreCase(site)) {
+            return getWikibaseItemById(pageName);
+        }
 
         HashMap<String, String> getParams = new HashMap<>();
         HashMap<String, Object> postParams = new HashMap<>();
