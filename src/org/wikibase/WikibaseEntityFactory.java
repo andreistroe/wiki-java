@@ -64,6 +64,16 @@ public class WikibaseEntityFactory {
 
             NamedNodeMap apiAttrs = apiNode.getAttributes();
             Node successAttr = apiAttrs.getNamedItem("success");
+            if (null == successAttr) {
+                Node errorAttr = apiAttrs.getNamedItem("error");
+                String err = "Success attribute not found in Wikibase response";
+                if (null != errorAttr) {
+                    NamedNodeMap errAttrs = errorAttr.getAttributes();
+                    Node infoAttr = errAttrs.getNamedItem("info");
+                    err = infoAttr.getTextContent();
+                }
+                throw new WikibaseException(err);
+            }
             String successStatus = successAttr.getTextContent();
             if (!"1".equals(successStatus)) {
                 throw new WikibaseException("API call unsuccessful.");
