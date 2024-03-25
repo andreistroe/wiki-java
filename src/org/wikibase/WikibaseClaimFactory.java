@@ -184,7 +184,7 @@ public class WikibaseClaimFactory {
                         URI uri = null;
                         try {
                             uri = decUrlValue.contains("/") ? new URI(decUrl.getProtocol(), decUrl.getUserInfo(), decUrl.getHost(), decUrl.getPort(), decUrl.getPath(), decUrl.getQuery(), decUrl.getRef()) : decUrl.toURI();
-                        } catch (RuntimeException e) {
+                        } catch (Exception e) {
                             uri = decUrl.toURI();
                         }
                             
