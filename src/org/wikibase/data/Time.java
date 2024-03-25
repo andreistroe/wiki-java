@@ -27,6 +27,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
+import lombok.Getter;
+import lombok.Setter;
+import lombok.SneakyThrows;
+import lombok.experimental.Accessors;
+
+@Getter
+@Setter
+@Accessors(chain = true)
 public class Time extends WikibaseData {
     private int before;
     private int after;
@@ -35,32 +43,8 @@ public class Time extends WikibaseData {
     private YearMonth yearMonth = null;
     private LocalDate date;
     private LocalTime localTime;
-
-    public YearMonth getYearMonth() {
-        return yearMonth;
-    }
-
-    public void setYearMonth(YearMonth yearMonth) {
-        this.yearMonth = yearMonth;
-    }
-
-    public LocalDate getDate() {
-        return date;
-    }
-
-    public void setDate(LocalDate date) {
-        this.date = date;
-    }
-
-    public LocalTime getLocalTime() {
-        return localTime;
-    }
-
-    public void setLocalTime(LocalTime localTime) {
-        this.localTime = localTime;
-    }
-
     private URL calendarModel;
+    private long year;
 
     public Time() {
         super();
@@ -70,60 +54,24 @@ public class Time extends WikibaseData {
             e.printStackTrace();
         }
     }
+    
+    public Time(long year) {
+        this(9, year);
+    }
 
-    private long year;
+    @SneakyThrows
+    public Time setCalendarModelToJulian() {
+        calendarModel = new URL("http://www.wikidata.org/entity/Q1985786");
+        return this;
+    }
 
     @Override
     public String getDatatype() {
         return "time";
     }
 
-    public int getBefore() {
-        return before;
-    }
-
-    public void setBefore(int before) {
-        this.before = before;
-    }
-
-    public int getAfter() {
-        return after;
-    }
-
-    public void setAfter(int after) {
-        this.after = after;
-    }
-
-    public URL getCalendarModel() {
-        return calendarModel;
-    }
-
-    public void setCalendarModel(URL calendarModel) {
-        this.calendarModel = calendarModel;
-    }
-
-    public int getTimezone() {
-        return timezone;
-    }
-
-    public void setTimezone(int timezone) {
-        this.timezone = timezone;
-    }
-
-    public int getPrecision() {
-        return precision;
-    }
-
-    public void setPrecision(int precision) {
-        this.precision = precision;
-    }
-
     public long getYear() {
         return precision < 10 ? year : precision == 10 ? yearMonth.getYear() : date.getYear();
-    }
-
-    public void setYear(long year) {
-        this.year = year;
     }
 
     public String toString() {
@@ -226,5 +174,23 @@ public class Time extends WikibaseData {
         sbuild.append("\"calendarmodel\":\"").append(calendarModel.toString()).append('\"');
         sbuild.append('}');
         return sbuild.toString();
+    }
+
+    public Time(int precision, long year) {
+        this();
+        this.precision = precision;
+        this.year = year;
+    }
+
+    public Time(YearMonth yearMonth) {
+        this();
+        this.yearMonth = yearMonth;
+        this.precision = 10;
+    }
+
+    public Time(LocalDate date) {
+        this();
+        this.date = date;
+        this.precision = 11;
     }
 }
