@@ -2049,7 +2049,7 @@ public class Wiki implements Comparable<Wiki>
         boolean[] ret = new boolean[titles.size()];
         List<Map<String, Object>> info = getPageInfo(titles);
         for (int i = 0; i < titles.size(); i++)
-            ret[i] = (Boolean)info.get(i).get("exists");
+            ret[i] = info.get(i) != null && (Boolean)info.get(i).get("exists");
         return ret;
     }
 
