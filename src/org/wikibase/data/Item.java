@@ -50,4 +50,10 @@ public class Item extends WikibaseData {
     public String getDatatype() {
         return "wikibase-entityid";
     }
+
+    @Override
+    public String toString()
+    {
+        return (null == ent) ? "" : ent.toString(); 
+    }
 }
