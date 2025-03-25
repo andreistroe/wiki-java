@@ -1,6 +1,6 @@
 /**
- *  @(#)WikiTest.java 0.36 08/02/2019
- *  Copyright (C) 2014-2019 MER-C
+ *  @(#)WikiTest.java 0.39 12/08/2023
+ *  Copyright (C) 2014-2023 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  *  Unit tests for Wiki.java
  *  @author MER-C
+ *  @version 0.39
  */
 public class WikiTest
 {
@@ -355,8 +356,8 @@ public class WikiTest
     public void exists() throws Exception
     {
         List<String> titles = List.of("Main Page", "Tdkfgjsldf", "User:MER-C", 
-            "Wikipedia:Skfjdl", "Main Page", "Fish & chips");
-        boolean[] expected = new boolean[] { true, false, true, false, true, true };
+            "Wikipedia:Skfjdl", "Main Page", "Fish & chips", "[[illegal title]]");
+        boolean[] expected = new boolean[] { true, false, true, false, true, true, false };
         assertArrayEquals(expected, enWiki.exists(titles));
     }
 
@@ -368,7 +369,7 @@ public class WikiTest
         List<String> expected = List.of("Main Page", "Main Page", "Sdkghsdklg",
             "Goatse.cx", "Main Page", "Fish and chips", "Fish and chips");
         assertEquals(expected, enWiki.resolveRedirects(titles));
-        assertEquals(List.of("الصفحة الرئيسية"), arWiki.resolveRedirects(List.of("الصفحه الرئيسيه")), "rtl");
+        assertEquals(List.of("الصفحة الرئيسة"), arWiki.resolveRedirects(List.of("الصفحه الرئيسيه")), "rtl");
     }
 
     @Test
@@ -432,10 +433,33 @@ public class WikiTest
     }
 
     @Test
-    public void getImageHistory() throws Exception
+    public void getFileHistory() throws Exception
     {
-        assertTrue(enWiki.getImageHistory("File:Sdfjgh&sld.jpg").isEmpty(), "non-existent file");
-        assertTrue(enWiki.getImageHistory("File:WikipediaSignpostIcon.svg").isEmpty(), "commons image");
+        String fname = "File:Example.svg";
+        List<String> files = List.of("File:Sdfjgh&sld.jpg", fname);
+        List<List<Wiki.LogEntry>> fhist = commons.getFileHistory(files);
+        assertTrue(fhist.get(0).isEmpty(), "non-existent file");
+        assertTrue(enWiki.getFileHistory(List.of("File:WikipediaSignpostIcon.svg")).get(0).isEmpty(), "commons image");
+        
+        List<Wiki.LogEntry> example = fhist.get(1);
+        int size = example.size();
+        assertNull(example.get(0).getDetails().get("archivename"));
+        Wiki.LogEntry le = example.get(size - 1);
+        assertEquals(fname, le.getTitle());
+        assertEquals("upload", le.getAction());
+        assertEquals("Nethac DIU", le.getUser());
+        assertEquals(OffsetDateTime.parse("2006-07-12T21:14:45Z"), le.getTimestamp());
+        assertEquals("", le.getComment());
+        assertEquals("20070525200009!Example.svg", le.getDetails().get("archivename"));
+        le = example.get(size - 2);
+        assertEquals(fname, le.getTitle());
+        assertEquals("overwrite", le.getAction());
+        assertEquals("Gmaxwell", le.getUser());
+        assertEquals(OffsetDateTime.parse("2007-09-03T23:17:16Z"), le.getTimestamp());
+        assertEquals("This is a straightforward resize.. the image is being used as an example in enwp [[w:Wikipedia:10" +
+            "_things_you_did_not_know_about_images_on_Wikipedia]].. but it's a poor example without this change because the " +
+            "image page image is ''smaller'' than the thumbn", le.getComment());
+        assertEquals("20080323205329!Example.svg", le.getDetails().get("archivename"));
     }
 
     @Test
@@ -450,8 +474,35 @@ public class WikiTest
         byte[] imageData = Files.readAllBytes(tempfile.toPath());
         byte[] hash = sha256.digest(imageData);
         assertEquals("c0538b43b2a84b0b0caee667b17aa8d311300efd56252d972b6ce20bde6dd758",
-            String.format("%064x", new BigInteger(1, hash)));
+            "%064x".formatted(new BigInteger(1, hash)));
         Files.delete(tempfile.toPath());
+    }
+    
+    @Test
+    public void getOldImage() throws Exception
+    {
+        // https://commons.wikimedia.org/wiki/File:Black_hole_-_Messier_87.jpg
+        // first revision
+        String expected = "dab5b595f1ee7c24c638402f385184ca3677ca9181d0ce7d39625e87af6da446";
+        
+        // comparison 1: generic upload log
+        Wiki.RequestHelper rh = commons.new RequestHelper().byTitle("File:Black hole - Messier 87.jpg");
+        List<Wiki.LogEntry> le = commons.getLogEntries(Wiki.UPLOAD_LOG, "upload", rh);
+        File actual_1 = File.createTempFile("wiki-java_getOldImage_1", null);
+        commons.getOldImage(le.get(le.size() - 1), actual_1);
+        byte[] imageData = Files.readAllBytes(actual_1.toPath());
+        byte[] hash = sha256.digest(imageData);
+        assertEquals(expected, "%064x".formatted(new BigInteger(1, hash)), "getOldImage/upload log");
+        Files.delete(actual_1.toPath());
+
+        // comparison 2: image history
+        le = commons.getFileHistory(List.of("File:Black hole - Messier 87.jpg")).get(0);
+        File actual_2 = File.createTempFile("wiki-java_getOldImage_2", null);
+        commons.getOldImage(le.get(le.size() - 1), actual_2);
+        imageData = Files.readAllBytes(actual_2.toPath());
+        hash = sha256.digest(imageData);
+        assertEquals(expected, "%064x".formatted(new BigInteger(1, hash)), "getOldImage/file history");
+        Files.delete(actual_2.toPath());
     }
 
     @Test
@@ -521,11 +572,11 @@ public class WikiTest
     {
         // No special namespaces
         assertThrows(UnsupportedOperationException.class,
-            () -> enWiki.delete("Special:SpecialPages", "Not a reason"));
+            () -> enWiki.delete("Special:SpecialPages", "Not a reason", false));
         assertThrows(UnsupportedOperationException.class,
-            () -> enWiki.delete("Media:Example.png", "Not a reason"));
+            () -> enWiki.delete("Media:Example.png", "Not a reason", false));
         // Test runs without logging in, therefore expect failure.
-        assertThrows(SecurityException.class, () -> enWiki.delete("User:MER-C", "Not a reason"),
+        assertThrows(SecurityException.class, () -> enWiki.delete("User:MER-C", "Not a reason", false),
             "attempted to delete while logged out");
     }
 
@@ -534,13 +585,13 @@ public class WikiTest
     {
         // No special namespaces
         assertThrows(UnsupportedOperationException.class,
-            () -> enWiki.undelete("Special:SpecialPages", "Not a reason"),
+            () -> enWiki.undelete("Special:SpecialPages", "Not a reason", false),
             "Attempted to undelete a special page.");
         assertThrows(UnsupportedOperationException.class,
-            () -> enWiki.undelete("Media:Example.png", "Not a reason"),
+            () -> enWiki.undelete("Media:Example.png", "Not a reason", false),
             "Attempted to undelete a special page.");
         // Test runs without logging in, therefore expect failure.
-        assertThrows(SecurityException.class, () -> enWiki.undelete("User:MER-C", "Not a reason"),
+        assertThrows(SecurityException.class, () -> enWiki.undelete("User:MER-C", "Not a reason", false),
             "Attempted to undelete while logged out.");
     }
 
@@ -586,9 +637,18 @@ public class WikiTest
     @Test
     public void getBlockList() throws Exception
     {
+        // Must specify users in unit tests because otherwise it is a dynamic list.
+        List<String> users = List.of("Nimimaan", "Jimbo Wales", "Bodiadub");
+        List<Wiki.LogEntry> le = enWiki.getBlockList(users, null);
+        assertEquals(2, le.size());
+        
+        assertEquals("2019-05-22T03:28:04Z", le.get(0).getTimestamp().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        assertEquals("TonyBallioni", le.get(0).getUser());
+        assertEquals("User:Bodiadub", le.get(0).getTitle());
+        assertEquals("{{checkuserblock-account}}", le.get(0).getComment());
+        
         // https://en.wikipedia.org/wiki/Special:Blocklist/Nimimaan
         // see also getLogEntries() below
-        List<Wiki.LogEntry> le = enWiki.getBlockList(List.of("Nimimaan", "Bodiadub"), null);
         assertEquals(-1, le.get(1).getID());
         assertEquals("2016-06-21T13:14:54Z", le.get(1).getTimestamp().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
         assertEquals("MER-C", le.get(1).getUser());
@@ -602,14 +662,9 @@ public class WikiTest
 //            true, "indefinite" // talk page access revoked, expiry
 //        }, le[0].getDetails(), "block parameters");
 
-        assertEquals("2019-05-22T03:28:04Z", le.get(0).getTimestamp().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        assertEquals("TonyBallioni", le.get(0).getUser());
-        assertEquals("User:Bodiadub", le.get(0).getTitle());
-        assertEquals("{{checkuserblock-account}}", le.get(0).getComment());
-
-        // This IP address should not be blocked (it is reserved)
-        le = enWiki.getBlockList(List.of("0.0.0.0"), null);
-        assertTrue(le.isEmpty(), "0.0.0.0 should not be blocked");
+        // What happens if there are no blocked users in the list? 
+        le = enWiki.getBlockList(List.of("0.0.0.0"), null); // Reserved IPs should never be blocked. 
+        assertTrue(le.isEmpty());
     }
 
     @Test
@@ -635,7 +690,7 @@ public class WikiTest
         assertTrue(details.containsKey("nocreate"));
         assertTrue(details.containsKey("noemail"));
         assertTrue(details.containsKey("nousertalk"));
-        assertEquals("indefinite", details.get("expiry"));
+        assertEquals("infinity", details.get("expiry"));
 
         // New user log
         assertEquals("Nimimaan", le.get(1).getUser());
@@ -677,21 +732,24 @@ public class WikiTest
         // https://test.wikipedia.org/w/api.php?action=query&list=logevents&letitle=User%3AMER-C%2FTest
         rh = testWiki.new RequestHelper().byTitle("User:MER-C/Test");
         le = testWiki.getLogEntries(Wiki.ALL_LOGS, null, rh);
-        assertNull(le.get(0).getComment(), "reason hidden");
-        assertNull(le.get(0).getParsedComment(), "reason hidden");
+        assertEquals(Wiki.Event.COMMENT_DELETED, le.get(0).getComment(), "reason hidden");
+        assertEquals(Wiki.Event.COMMENT_DELETED, le.get(0).getParsedComment(), "reason hidden");
         assertTrue(le.get(0).isCommentDeleted(), "reason hidden");
-        assertNull(le.get(0).getUser(), "user hidden");
+        assertEquals(Wiki.Event.USER_DELETED, le.get(0).getUser(), "user hidden");
         assertTrue(le.get(0).isUserDeleted(), "user hidden");
+
         // tags (not related to the LogEntry being RevisionDeleted)
         assertEquals(List.of("HotCat", "MyStupidTestTag"), le.get(0).getTags());
+        
+        // back to RevisionDeleted log entries, no access
         // https://test.wikipedia.org/w/api.php?action=query&list=logevents&leuser=MER-C
         //     &lestart=20161002050030&leend=20161002050000&letype=delete
         rh = testWiki.new RequestHelper()
             .byUser("MER-C")
             .withinDateRange(OffsetDateTime.parse("2016-10-02T05:00:00Z"), OffsetDateTime.parse("2016-10-02T05:30:00Z"));
         le = testWiki.getLogEntries(Wiki.DELETION_LOG, null, rh);
-        assertNull(le.get(1).getTitle(), "action hidden");
-        assertTrue(le.get(1).isContentDeleted(), "action hidden");
+        assertEquals(Wiki.Event.CONTENT_DELETED, le.get(1).getTitle(), "target hidden");
+        assertTrue(le.get(1).isContentDeleted(), "target hidden");
     }
 
     @Test
@@ -744,34 +802,41 @@ public class WikiTest
     @Test
     public void getPageProperties() throws Exception
     {
-        List<String> pages = List.of("Main Page", "IPod", "Main_Page", "Special:Specialpages", "HomePage", "1&nbsp;000", "[invalid]");
+        List<String> pages = new ArrayList<>();
+        pages.add(null);
+        assertNull(enWiki.getPageProperties(pages).get(0));
+        
+        pages.addAll(List.of("Main Page", "IPod", "Main_Page", "Special:Specialpages", "Portal talk:Massachusetts", "1&nbsp;000", "[invalid]"));
         List<Map<String, String>> pageprops = enWiki.getPageProperties(pages);
         assertEquals(pages.size(), pageprops.size());
 
+        // null in = null out
+        assertNull(pageprops.get(0));
+        
         // Main Page
-        assertEquals("Q5296", pageprops.get(0).get("wikibase_item"), "Main Page wikibase item");
-        assertTrue(pageprops.get(0).containsKey("notoc"), "Main Page has no toc");
-        assertTrue(pageprops.get(0).containsKey("noeditsection"), "Main Page has no edit section");
-
+        assertEquals("Q5296", pageprops.get(1).get("wikibase_item"), "Main Page wikibase item");
+        assertTrue(pageprops.get(1).containsKey("notoc"), "Main Page has no toc");
+        assertTrue(pageprops.get(1).containsKey("noeditsection"), "Main Page has no edit section");
+        
         // IPod
-        assertEquals("iPod", pageprops.get(1).get("displaytitle"), "iPod display title");
-        assertEquals("Q9479", pageprops.get(1).get("wikibase_item"), "iPod wikibase item");
-        assertTrue(pageprops.get(1).containsKey("wikibase-shortdesc"), "iPod has wikibase description");
-
+        assertEquals("iPod", pageprops.get(2).get("displaytitle"), "iPod display title");
+        assertEquals("Q9479", pageprops.get(2).get("wikibase_item"), "iPod wikibase item");
+        assertTrue(pageprops.get(2).containsKey("wikibase-shortdesc"), "iPod has wikibase description");
+        
         // Main_Page (duplicate, should be identical)
-        assertEquals(pageprops.get(2).hashCode(), pageprops.get(2).hashCode(), "identity");
+        assertEquals(pageprops.get(1).hashCode(), pageprops.get(3).hashCode(), "identity");
         
         // Special page = return null
-        assertNull(pageprops.get(3), "special page");
+        assertNull(pageprops.get(4), "special page");
         
-        // redirect, there are no relevant properties here, check for empty map
-        assertTrue(pageprops.get(4).isEmpty(), "page with no properties");
+        // page with no properties
+        assertTrue(pageprops.get(5).isEmpty(), "page with no properties");
         
         // HTML entities in title (special normalization case, we don't expect any props here either)
-        assertTrue(pageprops.get(4).isEmpty(), "normalization");
+        assertTrue(pageprops.get(6).isEmpty(), "normalization");
 
         // invalid title = return null
-        assertNull(pageprops.get(6), "invalid title");
+        assertNull(pageprops.get(7), "invalid title");
     }
 
     @Test
@@ -789,23 +854,29 @@ public class WikiTest
     @Test
     public void getFileMetadata() throws Exception
     {
-        List<Map<String, Object>> results = enWiki.getFileMetadata(List.of(
-            "File:Tianasquare.jpg", "File:Lweo&pafd.blah", "File:Phra Phuttha Chinnarat (II).jpg", 
+        List<String> files = new ArrayList<>();
+        files.add(null);
+        assertNull(enWiki.getFileMetadata(files).get(0));
+        
+        files.addAll(List.of("File:Tankman_new_longshot_StuartFranklin.jpg", 
+            "File:Lweo&pafd.blah", "File:Phra Phuttha Chinnarat (II).jpg", 
             "File:WikipediaSignpostIcon.svg", "File:Mandelbrotzoom 20191023.webm",
             "File:Mandelbrotzoom&nbsp;20191023.webm"));
+        List<Map<String, Object>> results = enWiki.getFileMetadata(files);
+        assertNull(results.get(0));
         
-        // https://en.wikipedia.org/wiki/File:Tianasquare.jpg
-        Map<String, Object> tankman = results.get(0);
+        // https://en.wikipedia.org/wiki/File:Tankman_new_longshot_StuartFranklin.jpg
+        Map<String, Object> tankman = results.get(1);
         assertEquals("image/jpeg", tankman.get("mime"));
-        assertEquals(330, tankman.get("width"));
-        assertEquals(218, tankman.get("height"));
-        assertEquals(48481L, tankman.get("size"));
+        assertEquals(261, tankman.get("width"));
+        assertEquals(381, tankman.get("height"));
+        assertEquals(24310L, tankman.get("size"));
         
-        assertNull(results.get(1), "non-existent file");
+        assertNull(results.get(2), "non-existent file");
         
         // Commons files return results
         // https://en.wikipedia.org/wiki/File:Phra_Phuttha_Chinnarat_(II).jpg   
-        Map<String, Object> wat = results.get(2);
+        Map<String, Object> wat = results.get(3);
         assertEquals("image/jpeg", wat.get("mime"));
         assertEquals(5395, wat.get("width"));
         assertEquals(3596, wat.get("height"));
@@ -821,7 +892,7 @@ public class WikiTest
         
         // slightly exotic file type: SVG
         // https://en.wikipedia.org/wiki/File:WikipediaSignpostIcon.svg
-        Map<String, Object> signpost = results.get(3);
+        Map<String, Object> signpost = results.get(4);
         assertEquals("image/svg+xml", signpost.get("mime"));
         assertEquals(46, signpost.get("width"));
         assertEquals(55, signpost.get("height"));
@@ -829,12 +900,12 @@ public class WikiTest
         
         // large file that busts Java integer size
         // https://en.wikipedia.org/wiki/File:Mandelbrotzoom_20191023.webm
-        Map<String, Object> fractal = results.get(4);
+        Map<String, Object> fractal = results.get(5);
         assertEquals("video/webm", fractal.get("mime"));
         assertEquals(2703768090L, fractal.get("size"));
         
         // server-side normalization
-        assertEquals(fractal, results.get(5));
+        assertEquals(fractal, results.get(6));
         
         // further tests blocked on MediaWiki API rewrite
         // see https://phabricator.wikimedia.org/T89971
@@ -895,7 +966,8 @@ public class WikiTest
 
         // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Linkfinder
         links = testWiki.getExternalLinksOnPage(List.of("User:MER-C/UnitTests/Linkfinder"));
-        List<String> expected = List.of("http://spam.example.com", "http://www.example.net", "https://en.wikipedia.org");
+        List<String> expected = List.of("http://spam.example.com/", "https://en.wikipedia.org/", 
+            "http://www.example.net/", "https://example.com/protocol_relative");
         assertEquals(expected, links.get(0));
     }
 
@@ -942,19 +1014,29 @@ public class WikiTest
     }
 
     @Test
-    public void getLocale()
+    public void locale()
     {
         assertEquals(Locale.ENGLISH, enWiki.locale());
         assertEquals(Locale.GERMAN, deWiki.locale());
     }
 
     @Test
-    public void getInstalledExtensions()
+    public void installedExtensions()
     {
         List<String> extensions = enWiki.installedExtensions();
         assertTrue(extensions.contains("Math"));
         assertTrue(extensions.contains("SpamBlacklist"));
         assertFalse(extensions.contains("NotAnExtension"));
+    }
+    
+    @Test
+    public void interWikiMap()
+    {
+        Map<String, String> iwmap = enWiki.interWikiMap();
+        assertEquals("https://meta.wikimedia.org/wiki/$1", iwmap.get("m"));
+        assertEquals("https://meta.wikimedia.org/wiki/$1", iwmap.get("meta"));
+        assertEquals("https://www.wikidata.org/wiki/$1", iwmap.get("d"));
+        assertNull(iwmap.get("245"));
     }
 
     @Test
@@ -1000,15 +1082,15 @@ public class WikiTest
         assertTrue(results.get(0).isEmpty());
         
         // check namespace filtering (can test functionality here)
-        List<String> titles = List.of("Wikipedia:Featured picture candidates");
+        List<String> titles = List.of("Main Page");
         results = enWiki.whatLinksHere(titles, false, false, Wiki.MAIN_NAMESPACE);
-        assertEquals(List.of("FPC", "Wikipedia community", "Featured picture candidates", 
-            "Featured picture candidate"), results.get(0), "namespace filter");
+        assertTrue(results.get(0).containsAll(List.of("Home page", "Wikipedia", "MainPage")), "namespace filter");
+        assertFalse(results.get(0).contains("Portal:Main page"));
         
         // check redirect filtering
         results = enWiki.whatLinksHere(titles, true, false, Wiki.MAIN_NAMESPACE);
-        assertEquals(List.of("Featured picture candidates", "Featured picture candidate"),
-            results.get(0), "namespace filter");
+        assertTrue(results.get(0).containsAll(List.of("MainPage")), "redirect filter");
+        assertFalse(results.get(0).removeAll(List.of("Portal:Main page", "Home page", "Wikipedia")));
         
         // check adding redirects to results
         results = testWiki.whatLinksHere(List.of("Main Page"), false, false, Wiki.HELP_NAMESPACE);
@@ -1088,10 +1170,10 @@ public class WikiTest
         assertTrue(rev.isUserDeleted(), "user revdeled flag");
         assertTrue(rev.isCommentDeleted(), "summary revdeled flag");
         assertTrue(rev.isContentDeleted(), "content revdeled flag");
-        assertNull(rev.getComment(), "summary revdeled");
-        assertNull(rev.getParsedComment(), "summary revdeled");
-        assertNull(rev.getUser(), "user revdeled");
-        assertNull(rev.getSha1(), "sha1/content revdeled");
+        assertEquals(Wiki.Event.COMMENT_DELETED, rev.getComment(), "summary revdeled");
+        assertEquals(Wiki.Event.COMMENT_DELETED, rev.getParsedComment(), "summary revdeled");
+        assertEquals(Wiki.Event.USER_DELETED, rev.getUser(), "user revdeled");
+        assertEquals(Wiki.Event.CONTENT_DELETED, rev.getSha1(), "sha1/content revdeled");
         
         // Revision has been deleted (not RevisionDeleted)
         // https://test.wikipedia.org/wiki/User:MER-C/UnitTests/Delete
@@ -1106,7 +1188,7 @@ public class WikiTest
         // must specify from/to content
         try
         {
-            enWiki.diff(Map.of("xxx", "yyy"), Map.of("revid", 738178354L));
+            enWiki.diff(Map.of("xxx", "yyy"), Map.of("revid", 738178354L), "unified");
             fail("Failed to specify from content.");
         }
         catch (IllegalArgumentException | NoSuchElementException expected)
@@ -1114,7 +1196,7 @@ public class WikiTest
         }
         try
         {
-            enWiki.diff(Map.of("revid", 738178354L), Map.of("xxx", "yyy"));
+            enWiki.diff(Map.of("revid", 738178354L), Map.of("xxx", "yyy"), "unified");
             fail("Failed to specify to content.");
         }
         catch (IllegalArgumentException | NoSuchElementException expected)
@@ -1122,28 +1204,28 @@ public class WikiTest
         }
 
         // https://en.wikipedia.org/w/index.php?title=Dayo_Israel&oldid=738178354&diff=prev
-        String diff = enWiki.diff(Map.of("revid", 738178354L), Map.of("revid", Wiki.PREVIOUS_REVISION))
+        String diff = enWiki.diff(Map.of("revid", 738178354L), Map.of("revid", Wiki.PREVIOUS_REVISION), "unified")
             .replaceAll("<!--.*-->", "").trim();
         assertEquals("", diff, "dummy edit");
         // https://en.wikipedia.org/w/index.php?title=Source_Filmmaker&diff=804972897&oldid=803731343
         // The MediaWiki API does not distinguish between a dummy edit and no
         // difference. Both are now set to the empty string.
-        diff = enWiki.diff(Map.of("revid", 803731343L), Map.of("revid", 804972897L))
+        diff = enWiki.diff(Map.of("revid", 803731343L), Map.of("revid", 804972897L), "unified")
             .replaceAll("<!--.*-->", "").trim();
         assertEquals("", diff, "no difference");
         // no deleted pages allowed
-        assertNull(enWiki.diff(Map.of("title", "Create a page"), Map.of("revid", 804972897L)), "from deleted");
-        assertNull(enWiki.diff(Map.of("revid", 804972897L), Map.of("title", "Create a page")), "to deleted");
+        assertNull(enWiki.diff(Map.of("title", "Create a page"), Map.of("revid", 804972897L), "unified"), "from deleted");
+        assertNull(enWiki.diff(Map.of("revid", 804972897L), Map.of("title", "Create a page"), "unified"), "to deleted");
         // no RevisionDeleted revisions allowed (also broken)
         // https://en.wikipedia.org/w/index.php?title=Imran_Khan_%28singer%29&oldid=596714684
-        assertNull(enWiki.diff(Map.of("revid", 596714684L), Map.of("revid", Wiki.NEXT_REVISION)), "from deleted revision");
+        assertNull(enWiki.diff(Map.of("revid", 596714684L), Map.of("revid", Wiki.NEXT_REVISION), "unified"), "from deleted revision");
 
         // bad revids
-        assertNull(enWiki.diff(Map.of("revid", 1L << 62), Map.of("revid", 803731343L)), "bad from revid");
-        assertNull(enWiki.diff(Map.of("revid", 803731343L), Map.of("revid", 1L << 62)), "bad to revid");
+        assertNull(enWiki.diff(Map.of("revid", 1L << 62), Map.of("revid", 803731343L), "unified"), "bad from revid");
+        assertNull(enWiki.diff(Map.of("revid", 803731343L), Map.of("revid", 1L << 62), "unified"), "bad to revid");
         
         // new article
-        diff = enWiki.diff(Map.of("revid", 154400451L), Map.of("revid", Wiki.PREVIOUS_REVISION));
+        diff = enWiki.diff(Map.of("revid", 154400451L), Map.of("revid", Wiki.PREVIOUS_REVISION), "unified");
         assertTrue(diff.contains("'''Urmitz''' is a municipality in the [[Mayen-Koblenz|district of Mayen-Koblenz]] "
             + "in [[Rhineland-Palatinate]], western [[Germany]]"));
     }
@@ -1195,37 +1277,54 @@ public class WikiTest
     @Test
     public void getUsers() throws Exception
     {
-        List<String> usernames = List.of(
-            "127.0.0.1", // IP address
-            "MER-C",
-            "DKdsf;lksd", // should be non-existent...
-            "ZZRBrenda08", // blocked spambot with 2 edits
-            "127.0.0.0/24"); // IP range
+        // empty/null check
+        assertTrue(enWiki.getUsers(Collections.emptyList()).isEmpty());
+        List<String> usernames = new ArrayList<>();
+        usernames.add(null);
+        assertNull(enWiki.getUsers(usernames).get(0));
+        
+        usernames.add("127.0.0.1"); // IP address
+        usernames.add("MER-C");
+        usernames.add("DKdsf;lksd"); // should be non-existent...
+        usernames.add("ZZRBrenda08"); // blocked spambot with 2 edits
+        usernames.add("127.0.0.0/24"); // IP range
         List<Wiki.User> users = enWiki.getUsers(usernames);
-        assertNull(users.get(0), "IP address");
-        assertNull(users.get(2), "non-existent user");
-        assertNull(users.get(4), "IP address range");
+        assertNull(users.get(0), "null input");
+        assertNull(users.get(1), "IP address");
+        assertNull(users.get(3), "non-existent user");
+        assertNull(users.get(5), "IP address range");
 
-        assertEquals(usernames.get(1), users.get(1).getUsername(), "normalized username");
-        assertFalse(users.get(1).isBlocked());
-        assertEquals(Wiki.Gender.unknown, users.get(1).getGender());
+        assertEquals(usernames.get(2), users.get(2).getUsername(), "normalized username");
+        assertNull(users.get(2).getBlockDetails());
+        assertEquals(Wiki.Gender.unknown, users.get(2).getGender());
         assertEquals("2006-07-07T10:52:41Z",
-            users.get(1).getRegistrationDate().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+            users.get(2).getRegistrationDate().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
         // should be privileged information, but isn't?
-        // assertFalse(users[1].canBeEmailed());
+        // assertFalse(users[2].canBeEmailed());
 
-        List<String> groups = users.get(1).getGroups();
+        List<String> groups = users.get(2).getGroups();
         List<String> temp = List.of("*", "autoconfirmed", "user", "sysop");
         assertTrue(groups.containsAll(temp));
 
         // check (subset of) rights
-        List<String> rights = users.get(1).getRights();
+        List<String> rights = users.get(2).getRights();
         temp = List.of("apihighlimits", "delete", "block", "editinterface");
         assertTrue(rights.containsAll(temp));
 
-        assertEquals(usernames.get(3), users.get(3).getUsername());
-        assertEquals(2, users.get(3).countEdits());
-        assertTrue(users.get(3).isBlocked());
+        assertEquals(usernames.get(4), users.get(4).getUsername());
+        assertEquals(2, users.get(4).countEdits());
+        Wiki.LogEntry entry = users.get(4).getBlockDetails();
+        assertNotNull(entry);
+        assertEquals("MER-C", entry.getUser());
+        assertEquals("2018-04-18T18:46:05Z", entry.getTimestamp().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+        assertEquals("spammer", entry.getComment());
+        Map<String, String> details = entry.getDetails();
+        assertEquals("infinite", details.get("expiry"));
+        assertFalse(details.containsKey("noautoblock"));
+        assertTrue(details.containsKey("nocreate"));
+        // https://phabricator.wikimedia.org/T329426
+        // assertTrue(details.containsKey("noemail"));
+        // assertTrue(details.containsKey("notalk"));
     }
 
     @Test
@@ -1274,7 +1373,7 @@ public class WikiTest
         assertEquals("&#039;&#039;italic&#039;&#039;\n'''&amp;'''\n&&\n&lt;&gt;\n<>\n&quot;",
             text.get(0), "decoding");
         assertEquals("", text.get(1), "empty revision");
-        assertNull(text.get(2), "content deleted");
+        assertEquals(Wiki.Event.CONTENT_DELETED, text.get(2), "Content RevisionDeleted");
         assertEquals("Testing 0.2786153173518522", text.get(3), "same page");
         assertEquals("Testing 0.28713760508426645", text.get(4), "same page");
     }
@@ -1386,8 +1485,22 @@ public class WikiTest
         expected.add("A99");
         List<String> actual = enWiki.constructTitleString(titles);
         assertEquals(expected, actual);
+        
+        // Determine whether the correct number of items is returned.
+        titles.clear();
+        for (int i = 0; i < 50; i++)
+            titles.add("A" + i);
+        actual = enWiki.constructTitleString(titles);
+        assertEquals(1, actual.size());
+        
+        // should behave well with nulls if one gets fed in from a revdel somewhere
+        titles.clear();
+        titles.add(null);
+        assertTrue(enWiki.constructTitleString(titles).isEmpty());
+        titles.add("A");
+        assertEquals(List.of("A"), enWiki.constructTitleString(titles));
     }
-
+    
     // INNER CLASS TESTS
 
     @Test

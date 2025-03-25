@@ -19,8 +19,10 @@
  */
 package org.wikipedia.tools;
 
-import java.io.IOException;
+import java.io.*;
+import java.nio.file.Path;
 import java.util.*;
+import java.time.OffsetDateTime;
 import org.wikipedia.Wiki;
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -99,6 +101,7 @@ public class CommandLineParserTest
             .addSection("Options:")
             .addBooleanFlag("--boolean", "A boolean flag.")
             .addSingleArgumentFlag("--flag", "[string]", "Set some value to string.")
+            .addUserInputOptions("X")
             .buildHelpString();
         String expected = """
             SYNOPSIS:
@@ -117,6 +120,14 @@ public class CommandLineParserTest
                     A boolean flag.
                 --flag [string]
                     Set some value to string.
+                --user user 
+                    X this user.
+                --category category 
+                    X all users from this category (recursive).
+                --wikipage 'Main Page'
+                    X all users listed on the wiki page [[Main Page]].
+                --infile users.txt 
+                    X all users in this file.
             """.replace("    ", "\t");
         System.out.println(expected);
         System.out.println(actual);
@@ -166,7 +177,8 @@ public class CommandLineParserTest
     {
         Map<String, String> args = new HashMap<>();
         Wiki enWiki = Wiki.newSession("en.wikipedia.org");
-        List<String> users = CommandLineParser.parseUserOptions(args, enWiki);
+        // parseUserOptions2 because otherwise it will show a filechooser and potentially exit
+        List<String> users = CommandLineParser.parseUserOptions2(args, enWiki);
         assertTrue(users.isEmpty());
         
         args.put("--user", "Bodiadub");
@@ -184,5 +196,60 @@ public class CommandLineParserTest
         users = CommandLineParser.parseUserOptions(args, enWiki);
         assertFalse(users.contains("Bodiadub"));
         assertTrue(users.size() > 30);
+        
+        args.remove("--category");
+        Wiki testWiki = Wiki.newSession("test.wikipedia.org");
+        args.put("--wikipage", "User:MER-C/UnitTests/UserList");
+        users = CommandLineParser.parseUserOptions(args, testWiki);
+        assertTrue(users.containsAll(List.of("TestUser1", "TestUser2", "TestUser3", "TestUser4")));
+        assertEquals(4, users.size());
+        
+        // wikipage (non-existant)
+        args.put("--wikipage", "Invalid title[]");
+        users = CommandLineParser.parseUserOptions2(args, enWiki);
+        assertTrue(users.isEmpty());
+    }
+    
+    @Test
+    public void parseDateRange()
+    {
+        String sstr = "2018-11-17T17:30:54.101Z";
+        String estr = "2021-01-24T09:55:10.023Z";
+        OffsetDateTime sdate = OffsetDateTime.parse(sstr);
+        OffsetDateTime edate = OffsetDateTime.parse(estr);
+        Map<String, String> args = new HashMap<>();
+        
+        List<OffsetDateTime> dates = CommandLineParser.parseDateRange(args, "--start", "--end");
+        assertNull(dates.get(0));
+        assertNull(dates.get(1));
+        
+        args.put("--start", sstr);
+        dates = CommandLineParser.parseDateRange(args, "--start", "--end");
+        assertEquals(sdate, dates.get(0));
+        assertNull(dates.get(1));
+        
+        args.put("--end", estr);
+        dates = CommandLineParser.parseDateRange(args, "--start", "--end");
+        assertEquals(sdate, dates.get(0));
+        assertEquals(edate, dates.get(1));
+        
+        args.remove("--start");
+        dates = CommandLineParser.parseDateRange(args, "--start", "--end");
+        assertNull(dates.get(0));
+        assertEquals(edate, dates.get(1));
+        
+        // can't test for wrong way round because it will exit
+    }
+    
+    @Test
+    public void parseFileOption() throws IOException
+    {
+        File temp = File.createTempFile("test-parseFileOption", null);
+        temp.deleteOnExit();
+        Path p = temp.toPath();
+        Map<String, String> options = Map.of("--test", p.toString());
+        assertEquals(p, CommandLineParser.parseFileOption(options, "--test", "", "", true));
+        
+        // cannot test null or file not found - triggers a filechooser and may exit
     }
 }

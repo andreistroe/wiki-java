@@ -23,8 +23,9 @@ package org.wikipedia;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.function.Consumer;
+import java.util.function.*;
 import java.util.logging.*;
+import java.util.stream.*;
 
 /**
  *  Manages shared WMFWiki sessions and contains methods for dealing with WMF
@@ -37,6 +38,15 @@ public class WMFWikiFarm
     private final HashMap<String, WMFWiki> sessions = new HashMap<>();
     private static final WMFWikiFarm SHARED_INSTANCE = new WMFWikiFarm();
     private Consumer<WMFWiki> setupfn;
+    
+    /**
+     *  List of Wikimedia domains. I am surprised this is not available by some 
+     *  API.
+     */
+    public static final List<String> WMF_DOMAINS = List.of("wikimedia.org", "wikipedia.org",
+        "wiktionary.org", "wikibooks.org", "wikisource.org", "wikivoyage.org",
+        "wikinews.org", "wikiquote.org", "wikidata.org", "wikifunctions.org", "wikiversity.org",
+        "wikimediafoundation.org", "mediawiki.org", "toolforge.org");
     
     /**
      *  Computes the domain name (to use in {@link WMFWiki#newSession}) the 
@@ -79,6 +89,29 @@ public class WMFWikiFarm
     }
     
     /**
+     *  Inverts the results of {@link Wiki#interWikiMap()} to return a Map from
+     *  domain name to prefix. When there are multiple prefixes for one domain,
+     *  choose the prefix with the shortest length.
+     *  @param iwmap an interwiki mapping
+     *  @return (see above)
+     */
+    public static Map<String, String> invertInterWikiMap(Map<String, String> iwmap)
+    {
+        Map<String, String> ret = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : iwmap.entrySet())
+        {
+            String prefix = entry.getKey();
+            String target = entry.getValue();
+            String domain = ExternalLinks.extractDomain(target);
+            ret.merge(domain, prefix, (oldval, newval) -> (oldval.length() > newval.length()) ? newval : oldval);
+        }
+        // reinsert the www in special cases (the interwiki map omits them)
+        ret.put("www.wikidata.org", "d");
+        ret.put("www.mediawiki.org", "mw");
+        return ret;
+    }
+    
+    /**
      *  Returns a shared session manager. Note that multiple instances - i.e.
      *  multiple groups of sessions - are still permitted.
      *  @return a shared session manager
@@ -118,6 +151,14 @@ public class WMFWikiFarm
     }
     
     /**
+     *  Removes all shared sessions from this object.
+     */
+    public void clear()
+    {
+        sessions.clear();
+    }
+    
+    /**
      *  Sets a function that is called every time a WMFWiki session is created
      *  with this manager. The sole parameter is the new session. Use for a
      *  common setup routine.
@@ -141,7 +182,8 @@ public class WMFWikiFarm
      *  <li>locked - (Boolean) whether this user account has been locked
      *  <li>editcount - (int) total global edit count
      *  <li>wikicount - (int) total number of wikis edited
-     *  <li>DBNAME (e.g. "enwikisource" == "en.wikisource.org") - see below
+     *  <li>wikis (Map&lt;String, Map&lt;String, Object&gt;&gt;) a map of dbname 
+     *      (e.g. "enwikisource" == "en.wikisource.org") to the below
      *  </ul>
      * 
      *  <p>
@@ -157,16 +199,16 @@ public class WMFWikiFarm
      *  </ul>
      * 
      *  @see #dbNameToDomainName
-     *  @param username the username of the global user. IPs and non-existing users
-     *  are not allowed.
+     *  @param username the username of the global user or null if the user does
+     *  not exist. IPs are not allowed.
      *  @return user info as described above
      *  @throws IOException if a network error occurs
      *  @since WMFWiki 0.01
      */
     public Map<String, Object> getGlobalUserInfo(String username) throws IOException
     {
-        // fixme(?): throws UnknownError ("invaliduser" if user is an IP, doesn't exist
-        // or otherwise is invalid
+        // FIXME: throws UnknownError ("invaliduser" if user is an IP or is otherwise invalid
+        // note: lock reason is not available, see https://phabricator.wikimedia.org/T331237
         WMFWiki wiki = sharedSession("meta.wikimedia.org");
         wiki.requiresExtension("CentralAuth");
         Map<String, String> getparams = new HashMap<>();
@@ -176,6 +218,8 @@ public class WMFWikiFarm
         getparams.put("guiuser", wiki.normalize(username));
         String line = wiki.makeApiCall(getparams, null, "WMFWiki.getGlobalUserInfo");
         wiki.detectUncheckedErrors(line, null, null);
+        if (line.contains("missing=\"\""))
+            return null;
         
         // misc properties
         Map<String, Object> ret = new HashMap<>();
@@ -213,6 +257,7 @@ public class WMFWikiFarm
         
         // individual wikis
         int mergedend = line.indexOf("</merged>");
+        Map<String, Map<String, Object>> wikis = new HashMap<>();
         String[] accounts = line.substring(mergedindex, mergedend).split("<account ");
         for (int i = 1; i < accounts.length; i++)
         {
@@ -248,8 +293,9 @@ public class WMFWikiFarm
                 groups.add(accounts[i].substring(x + 7, y));
             }
             userinfo.put("groups", groups);
-            ret.put(wiki.parseAttribute(accounts[i], "wiki", 0), userinfo);
+            wikis.put(wiki.parseAttribute(accounts[i], "wiki", 0), userinfo);
         }
+        ret.put("wikis", wikis);
         ret.put("editcount", globaledits);
         ret.put("wikicount", wikicount);
         return ret;
@@ -300,52 +346,59 @@ public class WMFWikiFarm
      *  item or the local article doesn't exist
      *  @throws IOException if a network error occurs
      */
-    public List<String> getWikidataItems(WMFWiki wiki, List<String> titles) throws IOException
+    public List<String> getWikidataItems(WMFWiki wiki, SequencedCollection<String> titles) throws IOException
     {
         String dbname = (String)wiki.getSiteInfo().get("dbname");
         Map<String, String> getparams = new HashMap<>();
         getparams.put("action", "wbgetentities");
         getparams.put("sites", dbname);
-        
-        // WORKAROUND: this module doesn't accept mixed GET/POST requests
-        // often need to slice up titles into smaller chunks than slowmax (here 25)
-        // FIXME: replace with constructTitleString when Wikidata is behaving correctly
-        TreeSet<String> ts = new TreeSet<>();
-        for (String title : titles)
-            ts.add(wiki.normalize(title));
-        List<String> titles_enc = new ArrayList<>(ts);
-        ArrayList<String> titles_chunked = new ArrayList<>();
-        int count = 0;
-        do
-        {
-            titles_chunked.add(String.join("|", 
-                titles_enc.subList(count, Math.min(titles_enc.size(), count + 25))));
-            count += 25;
-        }
-        while (count < titles_enc.size());
-        
+                
         Map<String, String> results = new HashMap<>();
         WMFWiki wikidata_l = sharedSession("www.wikidata.org");
-        for (String chunk : titles_chunked)
+        for (String chunk : wikidata_l.constructTitleString(titles))
         {
-            getparams.put("titles", chunk);
-            String line = wikidata_l.makeApiCall(getparams, null, "getWikidataItem");
+            String line = wikidata_l.makeApiCall(getparams, Map.of("titles", chunk), "getWikidataItem");
             wikidata_l.detectUncheckedErrors(line, null, null);
             String[] entities = line.split("<entity ");
             for (int i = 1; i < entities.length; i++)
             {
                 if (entities[i].contains("missing=\"\""))
                     continue;
-                String wdtitle = wiki.parseAttribute(entities[i], " id", 0);
+                String wdtitle = wikidata_l.parseAttribute(entities[i], " id", 0);
                 int index = entities[i].indexOf("\"" + dbname + "\"");
-                String localtitle = wiki.parseAttribute(entities[i], "title", index);
+                String localtitle = wikidata_l.parseAttribute(entities[i], "title", index);
                 results.put(localtitle, wdtitle);
             }
         }
-        // reorder
-        List<String> ret = new ArrayList<>();
-        for (String title : titles)
-            ret.add(results.get(wiki.normalize(title)));
+        List<String> ret = wikidata_l.reorder(titles, results);
+        wikidata_l.log(Level.INFO, "WMFWikiFarm.getWikidataItems", 
+            "Successfully retrieved Wikidata items for " + titles.size() + " pages.");
+        return ret;
+    }
+
+    /**
+     *  Runs the given function on a set of wikis with specified concurrency 
+     *  and query limit.
+     *  @param <W> a Wiki type
+     *  @param <R> the type of the function output
+     *  @param wikis the collection of wikis to apply the function to
+     *  @param fn a function to apply to each wiki, returning some results
+     *  @param threads number of threads to use
+     *  @return a sorted map: wiki &#8594; function output for that wiki
+     */
+    public <W extends Wiki, R> Map<W, R> forAllWikis(Collection<W> wikis, Function<W, R> fn, int threads)
+    {
+        Stream<W> stream = wikis.stream();
+        // set concurrency if desired (FIXME: the thread count is ignored)
+        if (threads > 1)
+        {
+            System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "" + threads);
+            stream = stream.parallel();
+        }
+        Map<W, R> ret = stream.collect(Collectors.toMap(Function.identity(), wiki ->
+        {
+            return fn.apply(wiki);
+        }, (wiki1, wiki2) -> { throw new RuntimeException("Duplicate wikis!"); }, TreeMap::new));
         return ret;
     }
 }

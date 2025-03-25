@@ -54,6 +54,21 @@ public class UserLinkAdditionFinderTest
         assertEquals("test.wikipedia.org", finder_test.getWiki().getDomain());
         assertEquals("en.wikipedia.org", finder_en.getWiki().getDomain());
     }
+    
+    @Test
+    public void canSkipDomain() throws Exception
+    {
+        List<String> domains = List.of("en.wikipedia.org", "www.fda.gov", "nasa.gov",
+            "army.mil", "www.consilium.europa.eu", "gov.uk", "wa.gov.au", "europa.eu",
+            "govt.nz", "www.govt.nz", "bl.uk", "parliament.uk", "un.int");
+        for (String domain : domains)
+            assertTrue(finder_en.canSkipDomain(domain, true), "domain: " + domain);
+        
+        domains = List.of("www.example.com", "blah.gov.invalid", "fakegov.uk", "blahbl.uk",
+            "fake-gov.uk");
+        for (String domain : domains)
+            assertFalse(finder_en.canSkipDomain(domain, true), "domain: " + domain);
+    }
 
     @Test
     public void getLinksAdded() throws Exception
@@ -64,7 +79,7 @@ public class UserLinkAdditionFinderTest
         // remainder of users with one edit, one link
 
         List<String> users = List.of("Helonty", "ReteNsep", "Reyeilint", "Shittipa", "EDPerfect");
-        Map<Wiki.Revision, List<String>> linksadded = finder_en.getLinksAdded(users, null);
+        Map<Wiki.Revision, List<String>> linksadded = finder_en.getLinksAdded(users, null, null);
         Set<String> actual = linksadded.keySet().stream().map(rev -> String.valueOf(rev.getID())).collect(Collectors.toSet());
         assertEquals(4, actual.size());
         assertTrue(actual.containsAll(List.of("834061933", "823758919", "833871994", "834097191")));
@@ -89,7 +104,7 @@ public class UserLinkAdditionFinderTest
         }
         
         // check date cutoff (all users indeffed prior to this date, therefore empty)
-        linksadded = finder_en.getLinksAdded(users, OffsetDateTime.parse("2018-06-01T00:00:00Z"));
+        linksadded = finder_en.getLinksAdded(users, OffsetDateTime.parse("2018-06-01T00:00:00Z"), null);
         assertTrue(linksadded.isEmpty());
     }
 

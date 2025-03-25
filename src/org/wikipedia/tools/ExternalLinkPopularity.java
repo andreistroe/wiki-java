@@ -38,7 +38,7 @@ import org.wikipedia.*;
 public class ExternalLinkPopularity
 {
     private final Wiki wiki;
-    private int maxlinks = 500;
+    private int maxlinks = 1000;
     private List<String> exclude;
     
     /**
@@ -115,7 +115,7 @@ public class ExternalLinkPopularity
      *  getting bogged down with large queries. Some domains are used very 
      *  frequently (10000+ links), often because they are reliable sources. This 
      *  quantity is passed directly to {@link Wiki#setQueryLimit(int)}. The 
-     *  default is 500.
+     *  default is 1000.
      * 
      *  @param limit the query limit used
      *  @throws IllegalArgumentException if {@code limit < 1}
@@ -223,12 +223,9 @@ public class ExternalLinkPopularity
         Map<String, Integer> lsresults = new HashMap<>();
         for (String domain : domains)
         {
-            int count = wiki.linksearch("*." + domain, "http").size();
+            int count = wiki.linksearch("*." + domain).size();
             // can't set namespace here due to $wgMiserMode and domains with
             // lots of links
-            if (count < maxlinks)
-                count += wiki.linksearch("*." + domain, "https").size();
-            
             lsresults.put(domain, Math.min(count, maxlinks));
         }
         wiki.setQueryLimit(Integer.MAX_VALUE);
@@ -242,9 +239,9 @@ public class ExternalLinkPopularity
         {
             if (pagedomaintourls.isEmpty())
                 return;
-            sb.append("== [[:");
-            sb.append(page);
-            sb.append("]]==\n");
+            sb.append("""
+                == [[:%s]]==
+                """.formatted(page));
             DoubleStream.Builder scores = DoubleStream.builder();
             DoubleSummaryStatistics dss = new DoubleSummaryStatistics();
             pagedomaintourls.forEach((domain, listoflinks) ->
@@ -258,14 +255,12 @@ public class ExternalLinkPopularity
                     sb.append(" (");
                 sb.append(numlinks);
                 if (numlinks == 1)
-                    sb.append(" link; Linksearch: ");
+                    sb.append(" link");
                 else
-                    sb.append(" links; Linksearch: ");
-                sb.append("[[Special:Linksearch/*.");
-                sb.append(domain);
-                sb.append("|http]] [[Special:Linksearch/https://*.");
-                sb.append(domain);
-                sb.append("|https]])\n");
+                    sb.append(" links");
+                sb.append("""
+                    ; [[Special:Linksearch/*.%s|Linksearch]])
+                    """.formatted(domain, domain));
                 scores.accept(numlinks);
                 dss.accept(numlinks);
                 for (String url : listoflinks)
@@ -280,15 +275,16 @@ public class ExternalLinkPopularity
             if (pagedomaintourls.size() > 1)
             {
                 double[] temp = scores.build().toArray();
-                sb.append(";Summary statistics\n");
-                sb.append("*COUNT: ");
-                sb.append(temp.length);
-                sb.append(String.format("\n*MEAN: %.1f\n", dss.getAverage()));
                 Arrays.sort(temp);
                 double[] quartiles = MathsAndStats.quartiles(temp);
-                sb.append(String.format("*Q1: %.1f\n", quartiles[0]));
-                sb.append(String.format("*MEDIAN: %.1f\n", MathsAndStats.median(temp)));
-                sb.append(String.format("*Q3: %.1f\n\n", quartiles[1]));
+                sb.append("""
+                    ;Summary statistics
+                    *COUNT: %d
+                    *MEAN: %.1f
+                    *Q1: %.1f
+                    *MEDIAN: %.1f
+                    *Q3: %.1f
+                """.formatted(temp.length, dss.getAverage(), quartiles[0], MathsAndStats.median(temp), quartiles[1]));
             }
         });
         return sb.toString();
@@ -302,11 +298,11 @@ public class ExternalLinkPopularity
         {
             if (pagedomaintourls.isEmpty())
                 return;
-            sb.append("<h2>");
-            sb.append(pageUtils.generatePageLink(page));
-            sb.append("</h2>\n");
-            sb.append(pageUtils.generateSummaryLinks(page));
-            sb.append("\n<ul>\n");
+            sb.append("""
+                <h2>%s</h2>
+                %s
+                <ul>
+                """.formatted(pageUtils.generatePageLink(page), pageUtils.generateSummaryLinks(page)));
             DoubleStream.Builder scores = DoubleStream.builder();
             DoubleSummaryStatistics dss = new DoubleSummaryStatistics();
             pagedomaintourls.forEach((domain, listoflinks) ->
@@ -320,22 +316,19 @@ public class ExternalLinkPopularity
                     sb.append(" (");
                 sb.append(numlinks);
                 if (numlinks == 1)
-                    sb.append(" link; Linksearch: ");
+                    sb.append(" link; ");
                 else
-                    sb.append(" links; Linksearch: ");
-                sb.append(pageUtils.generatePageLink("Special:Linksearch/*." + domain, "http"));
-                sb.append(pageUtils.generatePageLink("Special:Linksearch/https://*." + domain, "https"));
+                    sb.append(" links; ");
+                sb.append(pageUtils.generatePageLink("Special:Linksearch/*." + domain, "Linksearch"));
                 sb.append(")\n");
                 scores.accept(numlinks);
                 dss.accept(numlinks);
                 sb.append("<ul>");
                 for (String url : listoflinks)
                 {
-                    sb.append("<li><a href=\"");
-                    sb.append(url);
-                    sb.append("\">");
-                    sb.append(url);
-                    sb.append("</a>\n");
+                    sb.append("""
+                        <li><a href="%s">%s</a>"
+                        """.formatted(url, url));
                 }
                 sb.append("</ul>\n");
             });
@@ -344,15 +337,18 @@ public class ExternalLinkPopularity
             if (pagedomaintourls.size() > 1)
             {
                 double[] temp = scores.build().toArray();
-                sb.append("<b>Summary statistics</b>\n<ul>\n");
-                sb.append("<li>COUNT: ");
-                sb.append(temp.length);
-                sb.append(String.format("\n<li>MEAN: %.1f\n", dss.getAverage()));
                 Arrays.sort(temp);
                 double[] quartiles = MathsAndStats.quartiles(temp);
-                sb.append(String.format("<li>Q1: %.1f\n", quartiles[0]));
-                sb.append(String.format("<li>MEDIAN: %.1f\n", MathsAndStats.median(temp)));
-                sb.append(String.format("<li>Q3: %.1f\n</ul>\n", quartiles[1]));
+                sb.append("""
+                    <b>Summary statistics</b>
+                    <ul>
+                    <li>COUNT: %d
+                    <li>MEAN: %.1f
+                    <li>Q1: %.1f
+                    <li>MEDIAN: %.1f
+                    <li>Q3: %.1f
+                    </ul>
+                    """.formatted(temp.length, dss.getAverage(), quartiles[0], MathsAndStats.median(temp), quartiles[1]));
             }
         });
         return sb.toString();

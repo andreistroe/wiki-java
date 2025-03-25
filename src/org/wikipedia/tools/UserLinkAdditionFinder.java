@@ -1,6 +1,6 @@
 /**
- *  @(#)UserLinkAdditionFinder.java 0.02 05/11/2017
- *  Copyright (C) 2015-2017 MER-C
+ *  @(#)UserLinkAdditionFinder.java 0.03 15/06/2024
+ *  Copyright (C) 2015-2024 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -22,23 +22,22 @@ package org.wikipedia.tools;
 import java.io.*;
 import java.util.*;
 import java.util.regex.*;
-import java.nio.charset.Charset;
-import java.nio.file.*;
 import java.time.OffsetDateTime;
 import java.util.stream.Collectors;
-import javax.swing.JFileChooser;
 import org.wikipedia.*;
 
 /**
  *  Finds links added by a user in the main namespace.
  *  @author MER-C
- *  @version 0.02
+ *  @version 0.03
  */
 public class UserLinkAdditionFinder
 {
-    private static int threshold = 50;
     private final WMFWiki wiki;
+    private final Pages pages;
+    private final ExternalLinks el;
     private static final WMFWikiFarm sessions = WMFWikiFarm.instance();
+    private final List<Pattern> whitelist_regexes = new ArrayList<>();
     
     /**
      *  Runs this program.
@@ -54,80 +53,52 @@ public class UserLinkAdditionFinder
             .addHelp()
             .addVersion("UserLinkAdditionFinder v0.02\n" + CommandLineParser.GPL_VERSION_STRING)
             .addSingleArgumentFlag("--wiki", "example.org", "The wiki to fetch data from (default: en.wikipedia.org)")
-            .addSingleArgumentFlag("--user", "user", "Get links for this user.")
-            .addSingleArgumentFlag("--category", "category", "Get links for all users from this category (recursive).")
+            .addUserInputOptions("Get links for")
             .addBooleanFlag("--linksearch", "Conduct a linksearch to count links and filter commonly used domains.")
+            .addSingleArgumentFlag("--threshold", "50", "If filtering commonly used domains, the threshold number of links (default: 50)")
             .addBooleanFlag("--removeblacklisted", "Remove blacklisted links")
             .addSingleArgumentFlag("--fetchafter", "date", "Fetch only edits after this date.")
+            .addSingleArgumentFlag("--fetchbefore", "date", "Fetch only edits before this date")
+            .addSingleArgumentFlag("--ignorebelow", "X", "Don't return domains added less than X times")
             .addSection("If a file is not specified, a dialog box will prompt for one.")
             .parse(args);
 
         WMFWiki thiswiki = sessions.sharedSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
         boolean linksearch = parsedargs.containsKey("--linksearch");
         boolean removeblacklisted = parsedargs.containsKey("--removeblacklisted");
-        String datestring = parsedargs.get("--fetchafter");
-        String filename = parsedargs.get("default");
-        OffsetDateTime date = datestring == null ? null : OffsetDateTime.parse(datestring);
+        List<OffsetDateTime> dates = CommandLineParser.parseDateRange(parsedargs, "--fetchafter", "--fetchbefore");
+        int threshold = Integer.parseInt(parsedargs.getOrDefault("--threshold", "50"));
+        List<String> users = CommandLineParser.parseUserOptions(parsedargs, thiswiki);
+        int ignorebelow = Integer.parseInt(parsedargs.getOrDefault("--ignorebelow", "-1"));
         
         UserLinkAdditionFinder finder = new UserLinkAdditionFinder(thiswiki);
         ExternalLinkPopularity elp = new ExternalLinkPopularity(thiswiki);
         elp.setMaxLinks(threshold);
-
-        // read in from file
-        List<String> users = CommandLineParser.parseUserOptions(parsedargs, thiswiki);
-        if (users.isEmpty())
-        {
-            Path fp;
-            if (filename == null)
-            {
-                JFileChooser fc = new JFileChooser();
-                if (fc.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
-                    System.exit(0);
-                fp = fc.getSelectedFile().toPath();
-            }
-            else
-                fp = Paths.get(filename);
-            users = Files.readAllLines(fp, Charset.forName("UTF-8"));
-        }
 
         // Map structure:
         // * results: revid -> links added in that revision
         // * linkdomains: link -> domain
         // * linkcounts: domain -> count of links
         // * stillthere: page name -> link -> whether it is still there
-        Map<Wiki.Revision, List<String>> results = finder.getLinksAdded(users, date);
+        Map<Wiki.Revision, List<String>> results = finder.getLinksAdded(users, dates.get(0), dates.get(1));
         if (results.isEmpty())
         {
             System.out.println("No links found.");
             System.exit(0);
         }
-        
         Map<String, String> linkdomains = new HashMap<>();
         for (Map.Entry<Wiki.Revision, List<String>> entry : results.entrySet())
         {
             for (String link : entry.getValue())
             {
                 String domain = ExternalLinks.extractDomain(link);
-                if (domain != null) // must be parseable
+                if (domain != null && !finder.canSkipDomain(domain, removeblacklisted))
                     linkdomains.put(link, domain);
             }
         }
-        
-        // remove blacklisted links
+                
+        // remove commonly used domains and insignificant domains
         Collection<String> domains = new TreeSet(linkdomains.values());
-        ExternalLinks el = ExternalLinks.of(thiswiki);
-        if (removeblacklisted)
-        {
-            Iterator<String> iter = domains.iterator();
-            while (iter.hasNext())
-            {
-                String link = iter.next();
-                if (el.isSpamBlacklisted(linkdomains.get(link)))
-                    iter.remove();
-            }
-        }
-        
-        // remove commonly used domains
         Map<String, Integer> linkcounts = null;
         if (linksearch)
         {
@@ -136,7 +107,7 @@ public class UserLinkAdditionFinder
             while (iter.hasNext())
             {
                 Map.Entry<String, Integer> entry = iter.next();
-                if (entry.getValue() >= threshold)
+                if (entry.getValue() >= threshold || entry.getValue() <= ignorebelow)
                 {
                     iter.remove();
                     domains.remove(entry.getKey());
@@ -162,6 +133,21 @@ public class UserLinkAdditionFinder
     public UserLinkAdditionFinder(WMFWiki wiki)
     {
         this.wiki = wiki;
+        this.pages = Pages.of(wiki);
+        this.el = ExternalLinks.of(wiki);
+        
+        String[] regex = new String[] 
+        {
+            ".*\\.(?:gov|int|mil)$",
+            "(.*\\.)?gov\\.(?:au|br|cn|ie|in|il|ph|ru|scot|sg|ua|uk|wales|za)$",
+            "(.*\\.)?gob\\.(?:ar|cl|es|mx|pe)$",
+            "(.*\\.)?(?:bl|judiciary|mod|nhs|parliament|police|royal)\\.uk$",
+            "(.*\\.)?\\bgouv\\.fr",
+            "(.*\\.)?\\bgovt\\.nz$",
+            "(.*\\.)?\\beuropa\\.eu$"
+        };
+        for (String r : regex)
+            whitelist_regexes.add(Pattern.compile(r));
     }
     
     /**
@@ -178,14 +164,16 @@ public class UserLinkAdditionFinder
      *  must be a list of usernames only, no User: prefix or wikilinks allowed.
      *  @param users the list of users to get link additions for
      *  @param earliest return edits no earlier than this date
+     *  @param latest return edits no later than this date
      *  @return a Map: revision &#8594; added links
      *  @throws IOException if a network error occurs
      */
-    public Map<Wiki.Revision, List<String>> getLinksAdded(List<String> users, OffsetDateTime earliest) throws IOException
+    public Map<Wiki.Revision, List<String>> getLinksAdded(List<String> users, OffsetDateTime earliest, 
+        OffsetDateTime latest) throws IOException
     {
         Wiki.RequestHelper rh = wiki.new RequestHelper()
             .inNamespaces(Wiki.MAIN_NAMESPACE)
-            .withinDateRange(earliest, null);
+            .withinDateRange(earliest, latest);
         Map<Wiki.Revision, List<String>> results = new HashMap<>();
         List<List<Wiki.Revision>> contribs = wiki.contribs(users, null, rh);
         List<Wiki.Revision> revisions = contribs.stream()
@@ -203,10 +191,37 @@ public class UserLinkAdditionFinder
     }
     
     /**
+     *  Filters added links for inclusion in search results. 
+     * 
+     *  @param domain the domain to check
+     *  @param removeblacklisted remove already blacklisted links
+     *  @return whether this domain can be skipped for the purpose of this
+     *  search
+     *  @throws IOException if a network error occurs when fetching the spam
+     *  blacklist (highly unlikely)
+     *  @since 0.03
+     */
+    public boolean canSkipDomain(String domain, boolean removeblacklisted) throws IOException
+    {
+        // WMF domains
+        for (String wmfsite : WMFWikiFarm.WMF_DOMAINS)
+            if (domain.endsWith(wmfsite))
+                return true;
+        // government domains
+        for (Pattern p : whitelist_regexes)
+            if (p.matcher(domain).matches())
+                return true;
+        // blacklisted domains
+        if (removeblacklisted && el.isSpamBlacklisted(domain))
+            return true;
+        return false;
+    }
+    
+    /**
      *  For a map that contains revision data &#8594; links added in that 
      *  revision, check whether the links still exist in the current version of
      *  the article. Such a map can be obtained by calling {@link 
-     *  #getLinksAdded(List, OffsetDateTime)}.
+     *  #getLinksAdded(List, OffsetDateTime, OffsetDateTime)}.
      *  @param data a map containing revision data &#8594; links added in that 
      *  revision
      *  @return a map containing page &#8594; link &#8594; whether it is still 
@@ -227,7 +242,7 @@ public class UserLinkAdditionFinder
             }
             list.addAll(listoflinks);
         });
-        return Pages.of(wiki).containExternalLinks(resultsbypage);
+        return pages.containExternalLinks(resultsbypage);
     }
     
     public String outputWikitableResults(Map<Wiki.Revision, List<String>> data, 
@@ -259,9 +274,7 @@ public class UserLinkAdditionFinder
                     builder.append(linkcounts.get(domain));
                     builder.append(" links: [[Special:Linksearch/*.");
                     builder.append(domain);
-                    builder.append("|http]], [[Special:Linksearch/https://*.");
-                    builder.append(domain);
-                    builder.append("|https]])");
+                    builder.append("|Linksearch]])");
                 }
                 else
                     builder.append(")");
@@ -318,53 +331,32 @@ public class UserLinkAdditionFinder
      */
     public List<String> parseDiff(Wiki.Revision revision) throws IOException
     {
-        // fetch the diff
-        String diff = revision.isNew() ? revision.getText() : revision.diff(Wiki.PREVIOUS_REVISION);
-        // filter dummy edits
-        if (diff == null || diff.isEmpty())
+        String diff = revision.isNew() ? revision.getText() : revision.diff(Wiki.PREVIOUS_REVISION, "inline");
+        if (diff == null || diff.isEmpty()) // filter dummy edits
             return Collections.emptyList();
-        List<String> links = new ArrayList<>();
+        Pattern linkregex = Pattern.compile("https?://.+?\\..{2,}?(?:\\s|]|<|$|&lt;)");
 
-        // some HTML strings we are looking for
-        // see https://en.wikipedia.org/w/api.php?action=compare&fromrev=77350972&torelative=prev
-        String diffaddedbegin = "<td class=\"diff-addedline diff-side-added\">";
-        String diffaddedend = "</td>";
-        String deltabegin = "<ins class=\"diffchange diffchange-inline\">";
-        String deltaend = "</ins>";
-        // link regex
-        Pattern pattern = Pattern.compile("https?://.+?\\..{2,}?(?:\\s|]|<|$)");
-
-        // Condense deltas to avoid problems like https://en.wikipedia.org/w/index.php?title=&diff=prev&oldid=486611734
-        diff = diff.toLowerCase(wiki.locale());
-        diff = diff.replace(deltaend + " " + deltabegin, " ");
-        diff = diff.replace("&lt;", "<");
-        for (int j = diff.indexOf(diffaddedbegin); j >= 0; j = diff.indexOf(diffaddedbegin, j))
+        // See https://en.wikipedia.org/w/api.php?action=compare&fromrev=77350972&torelative=prev&difftype=inline
+        // for example HTML
+        List<String> dellinks = new ArrayList<>();
+        Matcher matcher = Pattern.compile("<del .+?>(.+?)</del>").matcher(diff);
+        while (matcher.find())
         {
-            int y2 = diff.indexOf(diffaddedend, j);
-            String addedline = diff.substring(j + diffaddedbegin.length(), y2);
-            addedline = addedline.replaceFirst("^<div>", "");
-            addedline = addedline.replace("</div>", "");
-            if (addedline.contains(deltabegin))
-            {
-                for (int k = addedline.indexOf(deltabegin); k >= 0; k = addedline.indexOf(deltabegin, k))
-                {
-                    int y3 = addedline.indexOf(deltaend, k);
-                    String delta = addedline.substring(k + deltabegin.length(), y3);
-                    // extract links
-                    Matcher matcher = pattern.matcher(delta);
-                    while (matcher.find())
-                        links.add(matcher.group().split("[\\|<\\]\\s\\}]")[0]);
-                    k = y3;
-                }
-            }
-            else
-            {
-                Matcher matcher = pattern.matcher(addedline);
-                while (matcher.find())
-                    links.add(matcher.group().split("[\\|<\\]\\s\\}]")[0]);
-            }
-            j = y2;
+            Matcher inner = linkregex.matcher(matcher.group(0));
+            while (inner.find())
+                dellinks.add(inner.group().split("(\\||<|\\]|\\s|\\}|&lt;)")[0]);
         }
+        
+        List<String> links = new ArrayList<>();
+        matcher = Pattern.compile("<ins .+?>(.+?)</ins>").matcher(diff);
+        while (matcher.find())
+        {
+            Matcher inner = linkregex.matcher(matcher.group(0));
+            while (inner.find())
+                links.add(inner.group().split("(\\||<|\\]|\\s|\\}|&lt;)")[0]);
+        }
+        
+        links.removeAll(dellinks);
         return links;
     }
 }

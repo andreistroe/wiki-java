@@ -80,28 +80,21 @@ first in the GUI) apply.
 <%
     }
 
-    Wiki wiki = Wiki.newSession(wikiparam);
-    wiki.setMaxLag(-1);
+    Wiki wiki = sessions.sharedSession(wikiparam);
     wiki.setQueryLimit(1500);
 
-    Stream<String> pagestream = null;
-    switch (mode)
+    Stream<String> pagestream = switch (mode)
     {
-        case "category":
-            pagestream = wiki.getCategoryMembers(category).stream();
-            break;
-        case "contribs":
-            pagestream = wiki.contribs(user, null).stream().map(Wiki.Revision::getTitle);
-            break;
-        case "pages":
-            pagestream = Arrays.stream(pages.split("\r\n")).map(String::trim);
-            break;
-        default:
-            // state with no input parameters       
+        case "category" -> wiki.getCategoryMembers(category).stream();
+        case "contribs" -> wiki.contribs(user, null).stream().map(Wiki.Revision::getTitle);
+        case "pages" -> Arrays.stream(pages.split("\r\n")).map(String::trim);
+        default ->
+        {
 %>
 <%@ include file="footer.jspf" %>
 <%
-    }
+        }
+    };
         
     Set<String> pagesarray = pagestream
         .filter(title -> wiki.namespace(title) >= 0)

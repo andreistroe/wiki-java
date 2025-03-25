@@ -22,6 +22,7 @@ package org.wikipedia.tools;
 
 import java.io.BufferedWriter;
 import java.nio.file.*;
+import java.time.OffsetDateTime;
 import java.util.*;
 import org.wikipedia.*;
 
@@ -37,80 +38,104 @@ public class XWikiContributionSurveyor
 {
     /**
      *  Runs this program.
-     *  @param args the command line arguments, args[0] = individual user,
-     *  args[1] = optional additional category
+     *  @param args the command line arguments
      *  @throws Exception if a network error occurs
      */
     public static void main(String[] args) throws Exception
     {
         WMFWikiFarm sessions = WMFWikiFarm.instance();
         WMFWiki enWiki = sessions.sharedSession("en.wikipedia.org");
-        // Users.of(enWiki).cliLogin();
-        
-        Map<String, String> parsedargs = new CommandLineParser()
+        WMFWiki meta = sessions.sharedSession("meta.wikimedia.org");
+
+        CommandLineParser clp = new CommandLineParser()
             .synopsis("org.wikipedia.tools.XWikiContributionSurveyor", "[options]")
             .description("Survey the contributions of a large number of wiki editors across all wikis.")
-            .addHelp()
             .addVersion("XWikiContributionSurveyor v0.01\n" + CommandLineParser.GPL_VERSION_STRING)
-            .addSingleArgumentFlag("--user", "user", "Survey the given user.")
-            .addSingleArgumentFlag("--category", "category", "Fetch a list of users from the given category (recursive).")
-            .addBooleanFlag("--newonly", "Survey only page creations.")
-            .parse(args);
+            .addSingleArgumentFlag("--outfile", "file", "Save results to file(s).")
+            .addSingleArgumentFlag("--lockedafter", "date", "Only survey unlocked users or those locked after a certain date.")
+            .addSingleArgumentFlag("--wikipage", "'Main Page'", "Fetch a list of users from the en.wp page [[Main Page]].");
+        Map<String, String> parsedargs = ContributionSurveyor.addSharedOptions(clp).parse(args);
         List<String> users = CommandLineParser.parseUserOptions(parsedargs, enWiki);
-        boolean newonly = parsedargs.containsKey("--newonly");
+        String lockedafterstring = parsedargs.get("--lockedafter");
+        OffsetDateTime lockedafter = (lockedafterstring == null) ? null : OffsetDateTime.parse(lockedafterstring);
+        
+        StringBuilder temp = new StringBuilder("Command line: <kbd>java org.wikipedia.tools.XWikiContributionSurveyor");
+        for (String arg : args)
+        {
+            temp.append(" ");
+            temp.append(arg);
+        }
+        temp.append("</kbd>");
         
         Set<String> wikis = new HashSet<>();
         wikis.add("en.wikipedia.org");
+        List<String> toremove = new ArrayList<>();
+        Wiki.RequestHelper rhlocked = meta.new RequestHelper()
+            .limitedTo(1);
         for (String user : users)
         {
             Map<String, Object> ginfo = sessions.getGlobalUserInfo(user);
-            for (var entry : ginfo.entrySet())
+            if (ginfo == null)
             {
-                Object value = entry.getValue();
-                if (value instanceof Map)
+                toremove.add(user);
+                continue;
+            }
+            if (lockedafter != null && (Boolean)ginfo.get("locked"))
+            {
+                // not guaranteed but should work in nearly all cases
+                rhlocked = rhlocked.byTitle(meta.namespaceIdentifier(Wiki.USER_NAMESPACE) + ":" + user + "@global");
+                List<Wiki.LogEntry> le = meta.getLogEntries("globalauth", null, rhlocked);
+                if (!le.isEmpty() && le.get(0).getTimestamp().isBefore(lockedafter))
                 {
-                    Map m = (Map)value;
-                    String url = ((String)m.get("url")).replace("https://", "");
-                    int edits = (Integer)m.get("editcount");
-                    if (edits > 0)
-                        wikis.add(url);
+                    toremove.add(user);
+                    continue;
                 }
             }
+            Map<?, ?> m = (Map)ginfo.get("wikis");
+            for (var entry : m.entrySet())
+            {
+                Map wikimap = (Map)entry.getValue();
+                String url = ((String)wikimap.get("url")).replace("https://", "");
+                int edits = (Integer)wikimap.get("editcount");
+                if (edits > 0)
+                    wikis.add(url);
+            }
         }
-        Path path = Paths.get("spam.txt");
+        users.removeAll(toremove);
+        int[] ns;
+        if (parsedargs.containsKey("--userspace"))
+            ns = new int[] { Wiki.MAIN_NAMESPACE, Wiki.USER_NAMESPACE };
+        else
+            ns = new int[] { Wiki.MAIN_NAMESPACE };
+        
+        Path path = CommandLineParser.parseFileOption(parsedargs, "--outfile", "Select output file", 
+            "Error: No output file selected.", true);
         try (BufferedWriter outwriter = Files.newBufferedWriter(path))
         {
+            Map<String, String> iwmap = WMFWikiFarm.invertInterWikiMap(meta.interWikiMap());
             for (String wiki : wikis)
             {
                 WMFWiki wikisession = sessions.sharedSession(wiki);
-                outwriter.write("==" + wiki + "==\n\n");
-                ContributionSurveyor cs = makeContributionSurveyor(wikisession, newonly);
+                ContributionSurveyor cs = ContributionSurveyor.makeContributionSurveyor(wikisession, parsedargs);
+                cs.setSurveyingTransferredFiles(false);
+                cs.setFooter(temp.toString());
                 
-                String prefix = wiki.substring(0, wiki.indexOf("."));
-                if (wiki.equals("www.wikidata.org"))
-                    prefix = "d";
-                List<String> pages;
-                if (wiki.equals("commons.wikimedia.org"))
-                    pages = cs.outputContributionSurvey(users, true, false, true, Wiki.MAIN_NAMESPACE);
-                else
-                    pages = cs.outputContributionSurvey(users, true, false, false, Wiki.MAIN_NAMESPACE);
-                
-                for (String page : pages)
-                {    
-                    page = page.replace("[[:", "[[:" + prefix + ":");
-                    page = page.replace("[[Special", "[[:" + prefix + ":Special");
-                    outwriter.write(page);
-                    outwriter.write("\n\n");
+                String prefix = iwmap.get(wiki);
+                List<String> pages = cs.outputContributionSurvey(users, true, false, 
+                    wiki.equals("commons.wikimedia.org"), ns);
+                                
+                if (!pages.isEmpty())
+                {
+                    outwriter.write("=" + wiki + "=\n\n");
+                    for (String page : pages)
+                    {    
+                        page = page.replace("[[:", "[[:" + prefix + ":");
+                        page = page.replace("[[Special", "[[:" + prefix + ":Special");
+                        outwriter.write(page);
+                        outwriter.write("\n\n");
+                    }
                 }
             }
         }
-    }
-    
-    private static ContributionSurveyor makeContributionSurveyor(Wiki wiki, boolean newonly)
-    {
-        ContributionSurveyor cs = new ContributionSurveyor(wiki);
-        cs.setComingled(true);
-        cs.setNewOnly(newonly);
-        return cs;
     }
 }

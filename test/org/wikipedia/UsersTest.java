@@ -76,13 +76,21 @@ public class UsersTest
     }
     
     @Test
+    public void generateWikitextSummaryLinksShort() throws Exception
+    {
+        String expected = "[[User:MER-C|MER-C]] ([[User talk:MER-C|talk]] &middot; "
+            + "[[Special:Contributions/MER-C|contribs]])";
+        assertEquals(expected, Users.generateWikitextSummaryLinksShort("MER-C"));
+    }
+    
+    @Test
     public void generateUserLinksShort() throws Exception
     {
         String expected = 
               "<a href=\"" + testWiki.getPageUrl("User:MER-C") + "\">MER-C</a> ("
             + "<a href=\"" + testWiki.getPageUrl("User talk:MER-C") + "\">talk</a> &middot; "
             + "<a href=\"" + testWiki.getPageUrl("Special:Contributions/MER-C") + "\">contribs</a>)";
-            assertEquals(expected, testWikiUsers.generateHTMLSummaryLinksShort("MER-C"));
+        assertEquals(expected, testWikiUsers.generateHTMLSummaryLinksShort("MER-C"));
     }
     
     @Test
@@ -112,22 +120,24 @@ public class UsersTest
     @Test
     public void generateUserLinksAsWikitext() throws Exception
     {
-        String expected = "* [[User:MER-C|MER-C]] ("
-            + "[[User talk:MER-C|talk]] | "
-            + "[[Special:Contributions/MER-C|contribs]] | "
-            + "[[Special:DeletedContributions/MER-C|deleted contribs]] | "
-            + "[{{fullurl:Special:Log|user=MER-C}} logs] | "
-            + "[[Special:Block/MER-C|block]] | "
-            + "[{{fullurl:Special:Log|type=block&page=User:MER-C}} block log])\n";
+        String expected = """
+            * [[User:MER-C|MER-C]] ([[User talk:MER-C|talk]] | \
+            [[Special:Contributions/MER-C|contribs]] | \
+            [[Special:DeletedContributions/MER-C|deleted contribs]] | \
+            [{{fullurl:Special:Log|user=MER-C}} logs] | \
+            [[Special:Block/MER-C|block]] | \
+            [{{fullurl:Special:Log|type=block&page=User:MER-C}} block log])
+            """;
         assertEquals(expected, Users.generateWikitextSummaryLinks("MER-C"));
         
-        expected = "* [[User:A B の|A B の]] ("
-            + "[[User talk:A B の|talk]] | "
-            + "[[Special:Contributions/A B の|contribs]] | "
-            + "[[Special:DeletedContributions/A B の|deleted contribs]] | "
-            + "[{{fullurl:Special:Log|user=A+B+%E3%81%AE}} logs] | "
-            + "[[Special:Block/A B の|block]] | "
-            + "[{{fullurl:Special:Log|type=block&page=User:A+B+%E3%81%AE}} block log])\n";
+        expected = """
+            * [[User:A B の|A B の]] ([[User talk:A B の|talk]] | \
+            [[Special:Contributions/A B の|contribs]] | \
+            [[Special:DeletedContributions/A B の|deleted contribs]] | \
+            [{{fullurl:Special:Log|user=A+B+%E3%81%AE}} logs] | \
+            [[Special:Block/A B の|block]] | \
+            [{{fullurl:Special:Log|type=block&page=User:A+B+%E3%81%AE}} block log])
+            """;
         assertEquals(expected, Users.generateWikitextSummaryLinks("A B の"), "special characters");
     }
 }

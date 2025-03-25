@@ -25,7 +25,6 @@ import java.util.*;
 import java.util.function.*;
 import java.util.logging.*;
 import java.util.regex.*;
-import javax.swing.JFileChooser;
 import org.wikipedia.*;
 
 /**
@@ -55,7 +54,7 @@ public class CCIAnalyzer
     private static int MAX_EDIT_SIZE = 150;
     
     // lazy initialized stuff
-    private static Pattern targs_pattern;
+    private static Pattern targs_pattern, quoterefs_pattern, cite_template_pattern;
        
     /**
      *  Runs this program.
@@ -76,6 +75,7 @@ public class CCIAnalyzer
             .addBooleanFlag("--listpages", "Removes all list pages (aggressive)")
             .addBooleanFlag("--single", "Only cull the supplied page")
             .addSingleArgumentFlag("--numwords", "int", "Strings with more than this number of consecutive words are major edits.")
+            .addSingleArgumentFlag("--infile", "example.txt", "Read in the CCI from a file.")
             .addSingleArgumentFlag("--outfile", "example.txt", "Write output to example.txt, example.txt.001, example.txt.002, ...")
             .addVersion("CCIAnalyzer v0.06\n" + CommandLineParser.GPL_VERSION_STRING)
             .addHelp()
@@ -83,21 +83,6 @@ public class CCIAnalyzer
         
         CCIAnalyzer analyzer = new CCIAnalyzer();
         int wordcount = Integer.parseInt(parsedargs.getOrDefault("--numwords", "10"));
-
-        // output file(s)
-        String outfile = parsedargs.get("--outfile");
-        if (outfile == null)
-        {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select output file");
-            if (fc.showSaveDialog(null) == JFileChooser.APPROVE_OPTION)
-                outfile = fc.getSelectedFile().getPath();
-        }
-        if (outfile == null)
-        {
-            System.out.println("Error: No output file selected.");
-            System.exit(0);
-        }
 
         // load CCIs
         Wiki enWiki = Wiki.newSession("en.wikipedia.org");
@@ -116,11 +101,9 @@ public class CCIAnalyzer
         }
         else
         {
-            // read in from file
-            JFileChooser fc = new JFileChooser();
-            if (fc.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
-                System.exit(0);      
-            List<String> lines = Files.readAllLines(fc.getSelectedFile().toPath());
+            Path p = CommandLineParser.parseFileOption(parsedargs, "--infile", "Select CCI text file input", 
+                "Error: no input file specified", false);
+            List<String> lines = Files.readAllLines(p);
             StringBuilder temp = new StringBuilder(1000000);
             for (String line : lines)
             {
@@ -156,14 +139,16 @@ public class CCIAnalyzer
         analyzer.setTitleFunction(titlefn);
         
         // do the stuff
-        Path path = Paths.get(outfile);
-        int counter = 0;
-        for (CCIPage page : pages)
+        String outfile = parsedargs.get("--outfile");
+        Path path = CommandLineParser.parseFileOption(parsedargs, "--outfile", "Select output file", 
+            "Error: No output file selected.", true);
+        for (int i = 0; i < pages.size(); i++)
         {
+            CCIPage page = pages.get(i);
             analyzer.loadDiffs(page);
             analyzer.analyzeDiffs(page);
             Files.writeString(path, analyzer.createOutput(page));
-            path = Paths.get(outfile + String.format(".%03d", ++counter));
+            path = path.resolveSibling("%s.%03d".formatted(outfile, i));
         }
     }
     
@@ -316,11 +301,6 @@ public class CCIAnalyzer
         if (cci == null)
             throw new IllegalArgumentException("CCI not loaded: [[" + ccipage.title + "]]");
         System.err.println("Loading [[" + ccipage.title + "]]:");
-        
-        // some HTML strings we are looking for
-        // see https://en.wikipedia.org/w/api.php?action=compare&fromrev=77350972&torelative=prev
-        String deltabegin = "<ins class=\"diffchange diffchange-inline\">";
-        String deltaend = "</ins>";
         ccipage.diffs.clear();
         ccipage.diffshort.clear();
         
@@ -337,18 +317,15 @@ public class CCIAnalyzer
             long oldid = Long.parseLong(cci.substring(xx + 1, yy));
 
             // Fetch diff. No plain text diffs for performance reasons, see
-            // https://phabricator.wikimedia.org/T15209
+            // https://phabricator.wikimedia.org/T15209. 
             try 
             {
-                String diff = wiki.diff(Map.of("revid", oldid), Map.of("revid", Wiki.PREVIOUS_REVISION));
+                String diff = wiki.diff(Map.of("revid", oldid), Map.of("revid", Wiki.PREVIOUS_REVISION), "inline");
                 parsed++;
-                if (diff == null) // RevisionDeleted revision
+                if (diff == null || diff.isEmpty()) // RevisionDeleted revisions and dummy edits
                     continue;
-                // Condense deltas to avoid problems like https://en.wikipedia.org/w/index.php?title=&diff=prev&oldid=486611734
-                diff = diff.toLowerCase(wiki.locale());
-                diff = diff.replace(deltaend + " " + deltabegin, " ");
                 ccipage.diffshort.add(edit);
-                ccipage.diffs.add(diff);
+                ccipage.diffs.add(diff.toLowerCase(wiki.locale()));
                 exception = false;
             }
             catch (IOException ex)
@@ -396,49 +373,42 @@ public class CCIAnalyzer
     public void analyzeDiffs(CCIPage page)
     {
         page.minoredits.clear();
-        
         // some HTML strings we are looking for
         // see https://en.wikipedia.org/w/api.php?action=compare&fromrev=77350972&torelative=prev
-        String diffaddedbegin = "<td class=\"diff-addedline diff-side-added\">";
-        String diffaddedend = "</td>";
-        String deltabegin = "<ins class=\"diffchange diffchange-inline\">";
-        String deltaend = "</ins>";
-        
+        Pattern ins = Pattern.compile("<ins .+?>(.+?)</ins>");
+
         for (int i = 0; i < page.diffs.size(); i++)
         {
-            String diff = page.diffs.get(i);
-            // If the diff is empty (see https://en.wikipedia.org/w/index.php?diff=343490272)
-            // it will not contain diffaddedbegin -> default major to true.
-            boolean major = true;
-            // It is easy to strip the HTML.
-            for (int j = diff.indexOf(diffaddedbegin); j >= 0; j = diff.indexOf(diffaddedbegin, j))
+            String[] lines = page.diffs.get(i).split("\\n");
+            boolean major = false;
+            for (String line : lines)
             {
-                int y2 = diff.indexOf(diffaddedend, j);
-                String addedline = diff.substring(j + diffaddedbegin.length(), y2);
-                addedline = addedline.replaceFirst("^<div>", "");
-                addedline = addedline.replaceAll("</div>.?$", "");
-                if (addedline.contains(deltabegin))
+                // extract the wikitext additions from the diff HTML
+                String change;
+                if (line.contains("mw-diff-inline-added") && !line.contains("mw-diff-empty-line"))
                 {
-                    for (int k = addedline.indexOf(deltabegin); k >= 0; k = addedline.indexOf(deltabegin, k))
+                    Matcher m = ins.matcher(line);
+                    m.find();
+                    change = m.group(1);
+                }
+                else if (line.contains("mw-diff-inline-moved") || line.contains("mw-diff-inline-changed"))
+                {
+                    // Condense deltas to avoid problems like https://en.wikipedia.org/w/index.php?title=&diff=prev&oldid=486611734
+                    StringBuilder sb = new StringBuilder();
+                    Matcher m = ins.matcher(line);
+                    while (m.find())
                     {
-                        // TODO: should strip all wikilinks here instead of in word count culling
-                        int y3 = addedline.indexOf(deltaend, k);
-                        String delta = addedline.substring(k + deltabegin.length(), y3);
-                        delta = delta.replace("&lt;", "<").replace("&gt;", ">");
-                        major = cullingfn.test(filterfn.apply(delta));
-                        if (major)
-                            break;
-                        k = y3;
+                        sb.append(m.group(1));
+                        sb.append(" ");
                     }
+                    change = sb.toString();
                 }
                 else
-                {
-                    addedline = addedline.replace("&lt;", "<").replace("&gt;", ">");                
-                    major = cullingfn.test(filterfn.apply(addedline));
-                }
+                    continue;
+                change = change.replace("&lt;", "<").replace("&gt;", ">");
+                major = cullingfn.test(filterfn.apply(change));
                 if (major)
                     break;
-                j = y2;
             }
             if (!major)
                 page.minoredits.add(page.diffshort.get(i));
@@ -448,6 +418,7 @@ public class CCIAnalyzer
     /**
      *  Generates output for the given CCI page.
      *  @param page the CCI page to generate output for
+     *  @return the new CCI output
      *  @since 0.02
      */
     public String createOutput(CCIPage page)
@@ -478,24 +449,97 @@ public class CCIAnalyzer
         
         // clean up output CCI listing
         String[] articles = ccib.toString().split("\\n");
-        StringBuilder cleaned = new StringBuilder();
+        String header = null, footer = null;
         int removedarticles = 0;
         Pattern pattern = Pattern.compile(".*edits?\\):\\s+");
+        Pattern pattern2 = Pattern.compile("\\(\\d+ edits?\\)");
+        Pattern headerptn = Pattern.compile(".+Pages (\\d+) to (\\d+).+");
+        List<String> cleaned_temp = new ArrayList<>();
         for (String article : articles)
         {
+            // remove headers
+            if (headerptn.matcher(article).matches())
+            {
+                if (header == null)
+                    header = article;
+                continue;
+            }
+            if (header == null)
+            {
+                out.append(article);
+                out.append("\n");
+                continue;
+            }
+            if (article.trim().isEmpty() || article.contains("Special:Contributions"))
+                continue;
+            if (article.startsWith("This report generated "))
+            {
+                footer = article;
+                continue;
+            }
+            if (article.matches("^==[^=].+")) // new user
+            {
+                // redistribute headers for the previous user
+                Matcher m = headerptn.matcher(header);
+                m.find();
+                final int start = Integer.parseInt(m.group(1)) - 1;
+                String header2 = new StringBuilder(header).replace(m.start(2), m.end(2), "%d").replace(m.start(1), m.end(1), "%d").toString();
+                List<String> outlist = Pages.toWikitextPaginatedList(cleaned_temp, s -> s.substring(1), 
+                    (s, e) -> header2.formatted(s + start, e + start), 20, false);
+                for (String section : outlist)
+                    out.append(section);
+                if (footer != null)
+                {
+                    out.append(footer);
+                    out.append("\n");
+                    footer = null;
+                }
+                out.append(article);
+                out.append("\n");
+                header = null;
+                cleaned_temp.clear();
+                continue;
+            }
+            
             // remove articles where all diffs are trivial
             if (pattern.matcher(article).matches())
             {
                 removedarticles++;
                 continue;
             }
-            cleaned.append(article);
-            cleaned.append("\n");
+            // recount diffs
+            int count = 0;
+            for (int pos = article.indexOf("[[Special:Diff"); pos >= 0; pos = article.indexOf("[[Special:Diff", pos + 1))
+                count++;
+            article = pattern2.matcher(article).replaceAll("(" + count + (count == 1 ? " edit)" : " edits)"));
+            cleaned_temp.add(article);
         }
-        out.append(cleaned);
+        if (header != null)
+        {
+            // redistribute headers for the last user
+            Matcher m = headerptn.matcher(header);
+            m.find();
+            final int start = Integer.parseInt(m.group(1)) - 1;
+            String header2 = new StringBuilder(header).replace(m.start(2), m.end(2), "%d").replace(m.start(1), m.end(1), "%d").toString();
+            List<String> outlist = Pages.toWikitextPaginatedList(cleaned_temp, s -> s.substring(1), 
+                (s, e) -> header2.formatted(s + start, e + start), 20, false);
+            for (String section : outlist)
+                out.append(section);
+        }
+        else
+        {
+            for (String article : cleaned_temp)
+            {
+                out.append(article);
+                out.append("\n");
+            }
+        }
+        
+        if (footer != null)
+            out.append(footer);
         out.append("\n");
-        System.err.printf("%d of %d diffs and %d articles removed.%n", page.baseremoveddiffs + page.minoredits.size(), 
-            page.diffcount, page.baseremovedarticles + removedarticles);
+        System.err.printf("%d of %d diffs and %d of %d articles removed.%n", page.baseremoveddiffs + page.minoredits.size(), 
+            page.diffcount, page.baseremovedarticles + removedarticles, page.pagecount);
         return out.toString();
     }
     
@@ -582,8 +626,9 @@ public class CCIAnalyzer
     /**
      *  Removes references from the given wikitext. The use of reference removal
      *  is an aggressive filtering option that should not be used unless it has
-     *  been verified that the CCIed editor does not dump large quotes into
-     *  references.
+     *  been verified that the CCIed editor does not dump large amounts of text
+     *  into references. References containing quotes in citation templates are
+     *  not removed.
      * 
      *  @param wikitext wikitext for which references should be removed
      *  @return the wikitext with references removed
@@ -591,11 +636,19 @@ public class CCIAnalyzer
      */
     public static String removeReferences(String wikitext)
     {
-        // Requires extension Cite, and therefore not in WikitextUtils
-        return wikitext.replaceAll("<ref name=.{0,15}/>", "")
-                       .replaceAll("<ref[ >].+?</ref>", "")
-        // Lists of citation templates
-                       .replaceAll("^\\*\\s*\\{\\{\\s*cite (web|book|news|journal)\\s*\\|.{0,200}\\}\\}\\s*$", "");
+        if (quoterefs_pattern == null)
+            quoterefs_pattern = Pattern.compile("\\|\\s*quote\\s*=\\s*");
+        if (cite_template_pattern == null)
+            cite_template_pattern = Pattern.compile("^\\*\\s*\\{\\{\\s*cite (web|book|news|journal)\\s*\\|.{0,200}\\}\\}\\s*$");
+        if (!quoterefs_pattern.matcher(wikitext).find())
+        {
+            // Requires extension Cite, and therefore not in WikitextUtils
+            wikitext = wikitext.replaceAll("<ref name=.{0,15}/>", "")
+                .replaceAll("<ref[ >].+?</ref>", "");
+            // Lists of citation templates
+            wikitext = cite_template_pattern.matcher(wikitext).replaceAll("");   
+        }
+        return wikitext;
     }
     
     /**
@@ -684,9 +737,7 @@ public class CCIAnalyzer
             }
             return false;
         }
-        if (delta.matches("^\\[\\[\\s*category:.+?\\]\\]"))
-            return false;
-        return true;
+        return !delta.matches("^\\[\\[\\s*category:.+?\\]\\]");
     }
     
     /**
@@ -747,6 +798,7 @@ public class CCIAnalyzer
         private String title;
         private String cci;
         private int diffcount;
+        private int pagecount;
         private int baseremoveddiffs;
         private int baseremovedarticles;
         private List<String> diffshort, diffs, minoredits;
@@ -760,9 +812,18 @@ public class CCIAnalyzer
             diffs = new ArrayList<>(1000);
             minoredits = new ArrayList<>(500);
             
-            // count diffs
-            for (int i = cci.indexOf("[[Special:Diff/"); i >= 0; i = cci.indexOf("[[Special:Diff/", ++i))
-                diffcount++;
+            // count articles and diffs
+            String[] x = cci.split("\n");
+            Pattern p = Pattern.compile("\\*.+\\(\\d+ edits?.*\\).+Special:Diff.+");
+            for (String line : x)
+            {
+                if (p.matcher(line).matches())
+                {
+                    for (int i = line.indexOf("[[Special:Diff/"); i >= 0; i = line.indexOf("[[Special:Diff/", ++i))
+                        diffcount++;
+                    pagecount++;
+                }
+            }
         }
         
        /**

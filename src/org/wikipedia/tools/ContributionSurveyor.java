@@ -1,6 +1,6 @@
 /**
- *  @(#)ContributionSurveyor.java 0.08 07/08/2021
- *  Copyright (C) 2011-2021 MER-C
+ *  @(#)ContributionSurveyor.java 0.09 10/02/2024
+ *  Copyright (C) 2011-2024 MER-C
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Affero General Public License as
@@ -21,11 +21,11 @@ package org.wikipedia.tools;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.zip.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 import javax.security.auth.login.*;
-import javax.swing.JFileChooser;
 
 import org.wikipedia.*;
 
@@ -40,14 +40,16 @@ import org.wikipedia.*;
  *  contribution surveyor (online version)</a>
  *  @see <a href="https://en.wikipedia.org/wiki/WP:CCI">Contributor Copyright
  *  Investigations</a>
- *  @version 0.08
+ *  @version 0.09
  */
 public class ContributionSurveyor
 {
     private final Wiki wiki;
     private OffsetDateTime earliestdate, latestdate;
+    private String footer;
     private boolean nominor = true, noreverts = true, newonly = false;
     private boolean comingle;
+    private boolean transferredfiles;
     private int minsizediff = 150;
     private final int articlesperpage = 1000;
     private final int articlespersection = 20;
@@ -60,34 +62,24 @@ public class ContributionSurveyor
     public static void main(String[] args) throws IOException
     {
         // parse arguments
-        Map<String, String> parsedargs = new CommandLineParser()
+        CommandLineParser clp = new CommandLineParser()
             .synopsis("org.wikipedia.tools.ContributionSurveyor", "[options]")
             .description("Survey the contributions of a large number of wiki editors.")
-            .addHelp()
             .addVersion("ContributionSurveyor v0.08\n" + CommandLineParser.GPL_VERSION_STRING)
-            .addSingleArgumentFlag("--infile", "file", "Use file as the list of users. "
-                + "Shows a filechooser if not specified.")
             .addSingleArgumentFlag("--outfile", "file", "Save results to file(s). "
                 + "Shows a filechooser if not specified. If multiple files output, use this as a prefix.")
+            .addBooleanFlag("--zip", "Write a zip file instead of individual file(s).")
             .addSection("Users to scan:")
             .addSingleArgumentFlag("--wiki", "example.org", "Use example.org as the home wiki (default: en.wikipedia.org).")
             .addBooleanFlag("--login", "Shows a CLI login prompt (use for high limits).")
-            .addSingleArgumentFlag("--wikipage", "'Main Page'", "Fetch a list of users from the wiki page [[Main Page]].")
-            .addSingleArgumentFlag("--category", "category", "Fetch a list of users from the given category (recursive).")
             .addSingleArgumentFlag("--sourcewiki", "example.com", "Use a different wiki than --wiki as a source of users.")
-            .addSingleArgumentFlag("--user", "user", "Survey the given user.")
-            .addBooleanFlag("--comingle", "If there are multiple users, combine their edits into the one survey (edits/uploads only).")
-            .addSection("Survey options:")
+            .addSingleArgumentFlag("--blockedafter", "date", "Only survey unblocked users or those blocked on the target wiki after a certain date.");
+        clp = addSharedOptions(clp);
+        Map<String, String> parsedargs = clp
             .addBooleanFlag("--images", "Survey images both on the home wiki and Commons.")
-            .addBooleanFlag("--userspace", "Survey userspace as well.")
-            .addBooleanFlag("--includeminor", "Include minor edits.")
-            .addBooleanFlag("--includereverts", "Include rollbacks.")
-            .addBooleanFlag("--newonly", "Survey only page creations.")
+            .addBooleanFlag("--notransfer", "Do not include transferred files to Commons.")
             .addBooleanFlag("--deleted", "Survey deleted edits (requires admin privileges)")
             .addBooleanFlag("--skiplive", "Don't survey live edits (for image/deleted only surveys)")
-            .addSingleArgumentFlag("--minsize", "size", "Only includes edits that add more than size bytes (default: 150).")
-            .addSingleArgumentFlag("--editsafter", "date", "Include edits made after this date (ISO format).")
-            .addSingleArgumentFlag("--editsbefore", "date", "Include edits made before this date (ISO format).")
             .parse(args);
 
         Wiki homewiki = Wiki.newSession(parsedargs.getOrDefault("--wiki", "en.wikipedia.org"));
@@ -96,60 +88,21 @@ public class ContributionSurveyor
             sourcewiki = Wiki.newSession(parsedargs.get("--sourcewiki"));
         if (parsedargs.containsKey("--login"))
             Users.of(homewiki).cliLogin();
-        String infile = parsedargs.get("--infile");
-        String outfile = parsedargs.get("--outfile");
-        String wikipage = parsedargs.get("--wikipage");
-        String earliestdatestring = parsedargs.get("--editsafter");
-        String latestdatestring = parsedargs.get("--editsbefore");
+        String blockedafterstring = parsedargs.get("--blockedafter");
+        OffsetDateTime blockedafter = (blockedafterstring == null) ? null : OffsetDateTime.parse(blockedafterstring);
 
-        OffsetDateTime editsafter = (earliestdatestring == null) ? null : OffsetDateTime.parse(earliestdatestring);
-        OffsetDateTime editsbefore = (latestdatestring == null) ? null : OffsetDateTime.parse(latestdatestring);
-
-        // fetch user list
+        // filter for users blocked after __ (for persistent sockfarms)
         List<String> users = CommandLineParser.parseUserOptions(parsedargs, sourcewiki);
-        if (wikipage != null)
+        if (blockedafter != null)
         {
-            String text = sourcewiki.getPageText(List.of(wikipage)).get(0);
-            List<String> list = Pages.parseWikitextList(text);
-            for (String temp : list)
-                if (sourcewiki.namespace(temp) == Wiki.USER_NAMESPACE)
-                    users.add(sourcewiki.removeNamespace(temp));
-        }
-        if (users.isEmpty()) // file IO
-        {
-            Path path = null;
-            if (infile == null)
+            List<Wiki.User> userobjs = homewiki.getUsers(users);
+            users.clear();
+            for (Wiki.User user : userobjs)
             {
-                JFileChooser fc = new JFileChooser();
-                fc.setDialogTitle("Select user list");
-                if (fc.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
-                    path = fc.getSelectedFile().toPath();
+                Wiki.LogEntry block = user.getBlockDetails();
+                if (block == null || block.getTimestamp().isAfter(blockedafter))
+                    users.add(user.getUsername());
             }
-            else
-                path = Paths.get(infile);
-            if (path == null)
-            {
-                System.out.println("Error: No input file selected.");
-                System.exit(0);
-            }
-            List<String> templist = Files.readAllLines(path);
-            for (String line : templist)
-                if (sourcewiki.namespace(line) == Wiki.USER_NAMESPACE)
-                    users.add(sourcewiki.removeNamespace(line));
-        }
-
-        // output file
-        if (outfile == null)
-        {
-            JFileChooser fc = new JFileChooser();
-            fc.setDialogTitle("Select output file");
-            if (fc.showSaveDialog(null) == JFileChooser.APPROVE_OPTION)
-                outfile = fc.getSelectedFile().getPath();
-        }
-        if (outfile == null)
-        {
-            System.out.println("Error: No output file selected.");
-            System.exit(0);
         }
 
         int[] ns;
@@ -157,30 +110,97 @@ public class ContributionSurveyor
             ns = new int[] { Wiki.MAIN_NAMESPACE, Wiki.USER_NAMESPACE };
         else
             ns = new int[] { Wiki.MAIN_NAMESPACE };
-
-        ContributionSurveyor surveyor = new ContributionSurveyor(homewiki);
-        surveyor.setDateRange(editsafter, editsbefore);
-        surveyor.setMinimumSizeDiff(Integer.parseInt(parsedargs.getOrDefault("--minsize", "150")));
-        surveyor.setIgnoringMinorEdits(!parsedargs.containsKey("--includeminor"));
-        surveyor.setIgnoringReverts(!parsedargs.containsKey("--includereverts"));
-        surveyor.setComingled(parsedargs.containsKey("--comingle"));
-        surveyor.setNewOnly(parsedargs.containsKey("--newonly"));
+        
+        ContributionSurveyor surveyor = makeContributionSurveyor(homewiki, parsedargs);
+        StringBuilder temp = new StringBuilder("Command line: <kbd>java org.wikipedia.tools.ContributionSurveyor");
+        for (String arg : args)
+        {
+            temp.append(" ");
+            temp.append(arg);
+        }
+        temp.append("</kbd>");
+        surveyor.setFooter(temp.toString());
+       
         List<String> output = surveyor.outputContributionSurvey(users, !parsedargs.containsKey("--skiplive"),
             parsedargs.containsKey("--deleted"), parsedargs.containsKey("--images"), ns);
-        
-        Path path = Paths.get(outfile);
-        try (BufferedWriter outwriter = Files.newBufferedWriter(path))
+
+        String outfile = parsedargs.get("--outfile");
+        Path path = CommandLineParser.parseFileOption(parsedargs, "--outfile", "Select output file", 
+            "Error: No output file selected.", true);
+        if (parsedargs.containsKey("--zip"))
         {
-            outwriter.write(output.get(0));
-        }
-        for (int i = 1; i < output.size(); i++)
-        {
-            path = Paths.get(outfile + String.format(".%03d", i));
-            try (BufferedWriter outwriter = Files.newBufferedWriter(path))
+            String fname = outfile.replace(".zip", ".txt");
+            Map<String, byte[]> zip = new LinkedHashMap<>();
+            for (int i = 0; i < output.size(); i++)
+                zip.put(fname + (i == 0 ? "" : ".%03d".formatted(i)), output.get(i).getBytes());
+            try (ZipOutputStream zout = new ZipOutputStream(new FileOutputStream(path.toFile())))
             {
-                outwriter.write(output.get(i));
+                ContributionSurveyor.outputZipFile(zout, zip);
             }
         }
+        else
+        {
+            try (BufferedWriter outwriter = Files.newBufferedWriter(path))
+            {
+                outwriter.write(output.get(0));
+            }
+            for (int i = 1; i < output.size(); i++)
+            {
+                path = path.resolveSibling("%s.%03d".formatted(outfile, i));
+                try (BufferedWriter outwriter = Files.newBufferedWriter(path))
+                {
+                    outwriter.write(output.get(i));
+                }
+            }
+        }
+    }
+    
+    /**
+     *  Returns command line arguments that can be shared with other tools.
+     *  @param parser a CommandLineParser
+     *  @return the CommandLineParser with options added
+     *  @since 0.08
+     *  @see org.wikipedia.tools.CommandLineParser
+     *  @see #makeContributionSurveyor(org.wikipedia.Wiki, java.util.Map)
+     */
+    static CommandLineParser addSharedOptions(CommandLineParser parser)
+    {
+        return parser.addHelp()
+            .addUserInputOptions("Survey")
+            .addBooleanFlag("--comingle", "If there are multiple users, combine their edits into the one survey (edits/uploads only).")
+            .addSection("Survey options:")
+            .addBooleanFlag("--includeminor", "Include minor edits.")
+            .addBooleanFlag("--includereverts", "Include rollbacks.")
+            .addBooleanFlag("--newonly", "Survey only page creations.")
+            .addSingleArgumentFlag("--minsize", "size", "Only includes edits that add more than size bytes (default: 150).")
+            .addSingleArgumentFlag("--editsafter", "date", "Include edits made after this date (ISO format).")
+            .addSingleArgumentFlag("--editsbefore", "date", "Include edits made before this date (ISO format).")
+            .addBooleanFlag("--userspace", "Survey userspace as well.");
+    }
+    
+    /**
+     *  Makes a new ContributionSurveyor for the given wiki based on parsed 
+     *  command line arguments. Currently supports date, minsize, includeminor, 
+     *  includereverts, newonly, and notransfer.
+     *  @param wiki a wiki
+     *  @param parsedargs parsed command line arguments
+     *  @return a ContributionSurveyor object
+     *  @see org.wikipedia.tools.CommandLineParser
+     *  @see #addSharedOptions(org.wikipedia.tools.CommandLineParser) 
+     *  @since 0.08
+     */
+    static ContributionSurveyor makeContributionSurveyor(Wiki wiki, Map<String, String> parsedargs)
+    {
+        List<OffsetDateTime> daterange = CommandLineParser.parseDateRange(parsedargs, "--editsafter", "--editsbefore");
+        ContributionSurveyor cs = new ContributionSurveyor(wiki);
+        cs.setNewOnly(parsedargs.containsKey("--newonly"));
+        cs.setDateRange(daterange.get(0), daterange.get(1));
+        cs.setMinimumSizeDiff(Integer.parseInt(parsedargs.getOrDefault("--minsize", "150")));
+        cs.setIgnoringMinorEdits(!parsedargs.containsKey("--includeminor"));
+        cs.setIgnoringReverts(!parsedargs.containsKey("--includereverts"));
+        cs.setComingled(parsedargs.containsKey("--comingle"));
+        cs.setSurveyingTransferredFiles(!parsedargs.containsKey("--notransfer"));
+        return cs;
     }
 
     /**
@@ -364,6 +384,44 @@ public class ContributionSurveyor
     {
         return newonly;
     }
+    
+    /**
+     *  Include (or not) files uploaded by the user on a local wiki but later 
+     *  transferred to in image contribution surveys. This can be prone to
+     *  inaccuracies because it performs a search of file namespace for the 
+     *  username of the surveyed user.
+     *  @param transferredfiles (see above)
+     *  @since 0.09
+     */
+    public void setSurveyingTransferredFiles(boolean transferredfiles)
+    {
+        this.transferredfiles = transferredfiles;
+    }
+    
+    /**
+     *  Returns whether this surveyor includes files uploaded by the user on a 
+     *  local wiki but later transferred to in image contribution surveys. This 
+     *  can be prone to inaccuracies because it performs a search of file 
+     *  namespace for the  username of the surveyed user.
+     *  @return (see above)
+     *  @since 0.09
+     */
+    public boolean isSurveyingTransferredFiles()
+    {
+        return transferredfiles;
+    }
+    
+    /**
+     *  Sets a custom footer to appear after the time the survey was generated.
+     *  @param footer a footer
+     *  @since 0.08
+     *  @see #generateWikitextFooter()
+     *  @see #generateHTMLFooter()
+     */
+    public void setFooter(String footer)
+    {
+        this.footer = footer;
+    }
 
     /**
      *  Conducts a survey of edits by the given users. The output is in the form
@@ -440,7 +498,7 @@ public class ContributionSurveyor
      *  @throws CredentialNotFoundException if one cannot view deleted pages
      *  @since 0.03
      */
-    public Map<String, Map<String, List<Wiki.Revision>>> deletedContributionSurvey(List<String> users,
+    public Map<String, Map<String, List<Wiki.Revision>>> deletedContributionSurvey(Iterable<String> users,
         int... ns) throws IOException, CredentialNotFoundException
     {
         // this looks a lot like ArticleEditorIntersector.intersectEditors()...
@@ -478,11 +536,13 @@ public class ContributionSurveyor
      *  @param users a list of users on the wiki
      *  @return for each user: first element = local uploads, second element = 
      *  uploads on Wikimedia Commons by the user, third element = images 
-     *  transferred to Commons (may be inaccurate depending on username).
+     *  transferred to Commons (may be inaccurate depending on username or empty
+     *  if disabled).
      *  @throws IOException if a network error occurs
      */
-    public Map<String, Map<String, List<String>>> imageContributionSurvey(List<String> users) throws IOException
+    public Map<String, Map<String, List<String>>> imageContributionSurvey(Iterable<String> users) throws IOException
     {
+        // TODO: expose common repository somewhere
         Wiki commons = Wiki.newSession("commons.wikimedia.org");
         Wiki.RequestHelper rh = wiki.new RequestHelper().withinDateRange(earliestdate, latestdate);
         Map<String, Map<String, List<String>>> ret = new HashMap<>();
@@ -501,9 +561,12 @@ public class ContributionSurveyor
 
             // fetch transferred commons uploads
             HashSet<String> commonsTransfer = new HashSet<>(10000);
-            List<Map<String, Object>> temp = commons.search("\"" + user + "\"", Wiki.FILE_NAMESPACE);
-            for (Map<String, Object> x : temp)
-                commonsTransfer.add((String)x.get("title"));
+            if (transferredfiles)
+            {
+                List<Map<String, Object>> temp = commons.search("\"" + user + "\"", Wiki.FILE_NAMESPACE);
+                for (Map<String, Object> x : temp)
+                    commonsTransfer.add((String)x.get("title"));
+            }
 
             // remove all files that have been reuploaded to Commons
             localuploads.removeAll(comuploads);
@@ -558,7 +621,7 @@ public class ContributionSurveyor
                 newpage = true;
             }
             // generate the diff strings now to avoid a second iteration
-            temp.append(String.format("[[Special:Diff/%d|(%+d)]]", edit.getID(), edit.getSizeDiff()));
+            temp.append("[[Special:Diff/%d|(%+d)]]".formatted(edit.getID(), edit.getSizeDiff()));
         }
         int numedits = edits.size();
         out.append("[[:");
@@ -685,16 +748,51 @@ public class ContributionSurveyor
         }
         return ret;
     }
+    
+    /**
+     *  Writes a set of text files to a zip archive.
+     *  @param zipper a zip output stream
+     *  @param output a map, filename to contents
+     *  @throws IOException if a I/O error occurs
+     *  @since 0.08
+     */
+    public static void outputZipFile(ZipOutputStream zipper, Map<String, byte[]> output) throws IOException
+    {
+        for (Map.Entry<String, byte[]> e : output.entrySet())
+        {
+            ZipEntry ze = new ZipEntry(e.getKey());
+            zipper.putNextEntry(ze);
+            byte[] b = e.getValue();
+            zipper.write(b, 0, b.length);
+            zipper.closeEntry();
+        }
+    }
 
     /**
      *  Generates a wikitext footer for contribution surveys.
      *  @return (see above)
      *  @since 0.04
+     *  @see #setFooter(java.lang.String)
+     *  @see #generateHTMLFooter()
      */
     public String generateWikitextFooter()
     {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return "This report generated by [https://github.com/MER-C/wiki-java ContributionSurveyor.java] at "
-            + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) + ". ";
+            + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) + ". " + footer;
+    }
+    
+    /**
+     *  Generates a HTML footer for contribution surveys.
+     *  @return (see above)
+     *  @since 0.08
+     *  @see #setFooter(java.lang.String) 
+     *  @see #generateWikitextFooter() 
+     */
+    public String generateHTMLFooter()
+    {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return "This report generated by <a href=\"https://github.com/MER-C/wiki-java\">ContributionSurveyor.java</a> at "
+            + now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) + ". " + footer;
     }
 }

@@ -19,7 +19,6 @@
  */
 package org.wikipedia.tools;
 
-import java.nio.file.*;
 import java.time.OffsetDateTime;
 import java.util.*;
 import org.wikipedia.*;
@@ -33,18 +32,25 @@ public class BlockLockStuff
 {
     private static WMFWikiFarm sessions = WMFWikiFarm.instance();
     
+    /**
+     *  Runs this program.
+     *  @param args the command line arguments
+     *  @throws Exception if a network error occurs
+     */
     public static void main(String[] args) throws Exception
     {
-        Wiki enWiki = sessions.sharedSession("en.wikipedia.org");
-        // List<String> socks = enWiki.getCategoryMembers("Category:Wikipedia sockpuppets of Bodiadub", true, Wiki.USER_NAMESPACE);
-        List<String> socks = Files.readAllLines(Paths.get("spam2.txt"));
-        
+        Map<String, String> parsedargs = new CommandLineParser()
+            .addSingleArgumentFlag("--wiki", "en.wikipedia.org", "Fetch socks from this wiki")
+            .addUserInputOptions("Fetch sock info for")
+            .addHelp()
+            .parse(args);
+        String wikistring = parsedargs.getOrDefault("--wiki", "en.wikipedia.org");
+        Wiki wiki = sessions.sharedSession(wikistring);
+        List<String> socks = CommandLineParser.parseUserOptions(parsedargs, wiki);
+
         lockFinder(socks);
-        staleScreener(socks);
-        
-        // TODO: accept arbitrary input
-        // TODO: determine unblocked accounts
-        // TODO: determine G5 date - first lock or block as per block list
+        blockFinder(wiki, socks);
+        staleScreener(wiki, socks);
     }
     
     public static void lockFinder(List<String> socks) throws Exception
@@ -59,46 +65,45 @@ public class BlockLockStuff
             // but less data transfer. Also, as usual, the W?F can't be arsed doing this
             // properly: https://phabricator.wikimedia.org/T261752
             Map<String, Object> ginfo = sessions.getGlobalUserInfo(sock);
-            if (!(Boolean)ginfo.get("locked"))
+            if (ginfo != null && !(Boolean)ginfo.get("locked"))
                 System.out.print("|" + meta.removeNamespace(sock));
         }
         System.out.println("}}\n\n");
     }
     
-    public static void staleScreener(List<String> socks) throws Exception
+    public static void staleScreener(Wiki wiki, List<String> socks) throws Exception
     {
-        Wiki enWiki = sessions.sharedSession("en.wikipedia.org");
-        
         // determine whether accounts are stale
         List<String> notstale = new ArrayList<>();
         List<String> stale = new ArrayList<>();
         List<String> unregistered = new ArrayList<>();
-        List<List<Wiki.Revision>> contribs = enWiki.contribs(socks, null, null);
+        List<List<Wiki.Revision>> contribs = wiki.contribs(socks, null, null);
         OffsetDateTime staledate = OffsetDateTime.now().minusDays(91);
         for (int i = 0; i < socks.size(); i++)
         {
             String sock = socks.get(i);
-            Wiki.RequestHelper rh = enWiki.new RequestHelper().byUser(sock);
-            List<Wiki.LogEntry> socklogs = enWiki.getLogEntries(Wiki.ALL_LOGS, null, rh);
+            String sock2 = wiki.removeNamespace(sock);
+            Wiki.RequestHelper rh = wiki.new RequestHelper().byUser(sock);
+            List<Wiki.LogEntry> socklogs = wiki.getLogEntries(Wiki.ALL_LOGS, null, rh);
             if (socklogs.isEmpty())
             {
-                unregistered.add("*{{checkuser|" + sock + "}}");
+                unregistered.add("*{{checkuser|" + sock2 + "}}");
                 continue;
             }
             
             List<Wiki.Revision> sockcontribs = contribs.get(i);
             OffsetDateTime lastlog = socklogs.get(0).getTimestamp();
             OffsetDateTime lastactive = lastlog;
-            if (sockcontribs.size() > 0)
+            if (!sockcontribs.isEmpty())
             {
                 OffsetDateTime lastedit = sockcontribs.get(0).getTimestamp();
                 if (lastedit.isAfter(lastlog))
                     lastactive = lastedit;
             }
             if (lastactive.isAfter(staledate))
-                notstale.add("*{{checkuser|" + sock + "}}");
+                notstale.add("*{{checkuser|" + sock2 + "}}");
             else
-                stale.add("*{{checkuser|" + sock + "}}");
+                stale.add("*{{checkuser|" + sock2 + "}}");
         }
         System.out.println(";Not stale:");
         for (String s : notstale)
@@ -109,5 +114,30 @@ public class BlockLockStuff
         System.out.println(";Not registered locally");
         for (String s : unregistered)
             System.out.println(s);
+    }
+    
+    public static void blockFinder(Wiki wiki, List<String> socks) throws Exception
+    {
+        List<Wiki.LogEntry> blocklist = wiki.getBlockList(socks, null);
+        List<String> unblocked = new ArrayList<>(socks);
+        
+        // TODO: add locks - not possible currently due to:
+        // 1. T261752
+        // 2. The API call behind WMFWiki.getGlobalUserInfo doesn't return when the lock occurred
+        // 3. Wiki.getLogEntries("globalauth", null, null) doesn't return the details because it
+        //    is not a native Wiki log type
+        // Any will result in this bug being fixed.
+        Wiki.LogEntry earliest = blocklist.isEmpty() ? null : blocklist.get(0);
+        for (Wiki.LogEntry block : blocklist)
+        {
+            unblocked.remove(block.getTitle());
+            OffsetDateTime ts = block.getTimestamp();
+            if (ts.isBefore(earliest.getTimestamp()))
+                earliest = block;
+        }
+        System.out.println(";Unblocked users:");
+        for (String user : unblocked)
+            System.out.println("*{{user|" + wiki.removeNamespace(user) + "}}");
+        System.out.println("G5 date: " + earliest.getTimestamp());
     }
 }

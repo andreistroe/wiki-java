@@ -1,6 +1,6 @@
 /**
- *  @(#)CommandLineParser.java 0.01 19/02/2018
- *  Copyright (C) 2018 MER-C
+ *  @(#)CommandLineParser.java 0.03 02/04/2024
+ *  Copyright (C) 2018-2024 MER-C
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License
@@ -19,14 +19,18 @@
  */
 package org.wikipedia.tools;
 
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
+import java.nio.file.*;
 import java.time.OffsetDateTime;
 import java.util.*;
-import org.wikipedia.Wiki;
+import javax.swing.JFileChooser;
+import org.wikipedia.*;
 
 /**
  *  Helper class that parses command line arguments.
  *  @author MER-C
+ *  @version 0.03
  */
 public class CommandLineParser
 {
@@ -35,15 +39,17 @@ public class CommandLineParser
      *  @see <a href="https://www.gnu.org/licenses/gpl.html">Text of the GNU
      *  General Public License, v3.</a>
      */
-    public static final String GPL_VERSION_STRING = 
-        "Copyright (C) 2007 - " + OffsetDateTime.now().getYear() + " MER-C and contributors.\n" +
-        "This is free software: you are free to change and redistribute it under the GNU\n" +
-        "GPL version 3 or later, see <https://www.gnu.org/licenses/gpl.html> for details.\n" +
-        "There is NO WARRANTY, to the extent permitted by law.\n";
+    public static final String GPL_VERSION_STRING = """
+        Copyright (C) 2007 - %d MER-C and contributors.
+        This is free software: you are free to change and redistribute it under the GNU
+        GPL version 3 or later, see <https://www.gnu.org/licenses/gpl.html> for details.
+        There is NO WARRANTY, to the extent permitted by law.
+        """.formatted(OffsetDateTime.now().getYear());
         
     private final HashSet<String> params;
     private final HashSet<String> boolean_params;
     private final List<String> descriptions;
+    private final List<String> required_params;
     private String synopsis, description, version;
 
     /**
@@ -54,6 +60,7 @@ public class CommandLineParser
         params = new HashSet<>();
         boolean_params = new HashSet<>();
         descriptions = new ArrayList<>();
+        required_params = new ArrayList<>();
         synopsis = "";
         description = "";
         version = "";
@@ -159,6 +166,43 @@ public class CommandLineParser
     }
     
     /**
+     *  Adds four standard user input options. The added options are:
+     *  <ul>
+     *    <li><kbd>--user</kbd> do something for that user
+     *    <li><kbd>--category</kbd> do something for all users in this category
+     *    <li><kbd>--wikipage</kbd> do something for all users listed on this wikipage
+     *    <li><kbd>--infile</kbd> do something for all users listed in this file
+     *  </ul>
+     *  @param action text describing the action to be taken, for inclusion in
+     *  help text
+     *  @return this CommandLineParser
+     *  @see #parseUserOptions(Map, Wiki) 
+     *  @since 0.03
+     */
+    public CommandLineParser addUserInputOptions(String action)
+    {
+        return addSingleArgumentFlag("--user", "user", action + " this user.")
+            .addSingleArgumentFlag("--category", "category", action + " all users from this category (recursive).")
+            .addSingleArgumentFlag("--wikipage", "'Main Page'", action + " all users listed on the wiki page [[Main Page]].")
+            .addSingleArgumentFlag("--infile", "users.txt", action + " all users in this file.");
+    }
+    
+    /**
+     *  Sets a list of required arguments. If any of these are not found, then
+     *  the program will exit when {@link #parse(java.lang.String[])} is called.
+     *  @param arg a required argument
+     *  @param args any further required arguments
+     *  @return this CommandLineParser
+     *  @since 0.02
+     */
+    public CommandLineParser requireAll(String arg, String... args)
+    {
+        required_params.add(arg);
+        required_params.addAll(Arrays.asList(args));
+        return this;
+    }
+    
+    /**
      *  Constructs and returns the string that is printed to standard output 
      *  when the user specifies <kbd>--help</kbd> on the command line.
      *  @return (see above)
@@ -202,7 +246,7 @@ public class CommandLineParser
      *  corresponding text and exit. Any non-matching arguments are concatenated
      *  (with spaces in between) with key "default" (if there are none, there is 
      *  no key). Keys and default arguments are in the order specified by the 
-     *  user.
+     *  user. Exits with code 1 if a required argument is not found.
      * 
      *  @param args the command line arguments to parse
      *  @return a LinkedHashMap containing the parsed arguments
@@ -230,30 +274,158 @@ public class CommandLineParser
             else
                 defaultargs.add(args[i]);
         }
+        // check all mandatory arguments are present
+        List<String> arglist = Arrays.asList(args);
+        if (!arglist.containsAll(required_params))
+        {
+            required_params.removeAll(arglist);
+            System.err.println("Required arguments " + required_params + " not found.");
+            System.exit(1);
+        }
         if (defaultargs.length() != 0)
             ret.put("default", defaultargs.toString());
         return ret;
     }
     
     /**
-     *  Fetches a list of users specified on the command line with the options
-     *  <kbd>--user</kbd> (singular) or <kbd>--category</kbd> (an entire category).
+     *  Fetches a list of users specified on the command line with the options:
+     * 
+     *  <ul>
+     *    <li><kbd>--user</kbd> (single user)
+     *    <li><kbd>--category</kbd> (an entire category, recursive)
+     *    <li><kbd>--wikipage</kbd> (users listed on a wiki page)
+     *    <li><kbd>--infile</kbd> (users listed in a file, last resort)
+     *  </ul>
+     * 
+     *  <p>Each flag adds to the users already obtained.
+     * 
      *  @param parsedargs parsed arguments from {@link #parse}
      *  @param wiki the wiki to fetch category members from
      *  @return a list of users
      *  @throws IOException if a network error occurs
+     *  @see #addUserInputOptions(String) 
+     *  @since 0.03
      */
     public static List<String> parseUserOptions(Map<String, String> parsedargs, Wiki wiki) throws IOException
+    {
+        List<String> users = parseUserOptions2(parsedargs, wiki);
+        if (users.isEmpty()) // file IO
+        {
+            Path path = CommandLineParser.parseFileOption(parsedargs, "--infile", "Select user list", 
+                "Error: No input file selected.", false);
+            List<String> templist = Files.readAllLines(path);
+            for (String line : templist)
+                if (wiki.namespace(line) == Wiki.USER_NAMESPACE)
+                    users.add(wiki.removeNamespace(line));
+        }
+        return users;
+    }
+
+    /**
+     *  Internal method for testing purposes - will not trigger a file chooser or
+     *  exit the VM if empty = safe for JUnit.
+     *  @param parsedargs parsed arguments from {@link #parse}
+     *  @param wiki the wiki to fetch category members from
+     *  @return a list of users
+     *  @throws IOException if a network error occurs
+     *  @since 0.03
+     */
+    static List<String> parseUserOptions2(Map<String, String> parsedargs, Wiki wiki) throws IOException
     {
         List<String> users = new ArrayList<>();
         String category = parsedargs.get("--category");
         String user = parsedargs.get("--user");
+        String wikipage = parsedargs.get("--wikipage");
         
         if (category != null)
             for (String member : wiki.getCategoryMembers(category, true, Wiki.USER_NAMESPACE))
                 users.add(wiki.removeNamespace(member));
         if (user != null)
             users.add(user);
+        if (wikipage != null)
+        {
+            String text = wiki.getPageText(List.of(wikipage)).get(0);
+            if (text == null)
+                System.err.println("Ignoring --wikipage, page [[" + wikipage + "]] does not exist.");
+            else
+            {
+                List<String> list = Pages.parseWikitextList(text);
+                for (String temp : list)
+                    if (wiki.namespace(temp) == Wiki.USER_NAMESPACE)
+                        users.add(wiki.removeNamespace(temp));
+            }
+        }
         return users;
+    }
+
+    
+
+    
+    /**
+     *  Parses and validates an interval between two dates specified on the 
+     *  command line. Exits if the start of the interval is after the end of 
+     *  the interval.
+     *  @param parsedargs parsed arguments from {@link #parse}
+     *  @param startflag the flag for the start date
+     *  @param endflag the flag for the end date
+     *  @return a list: position 0 is the start date, position 1 is the end date
+     *  (either or both may be null)
+     *  @since 0.02
+     */
+    public static List<OffsetDateTime> parseDateRange(Map<String, String> parsedargs, String startflag, String endflag)
+    {
+        String startstring = parsedargs.get(startflag);
+        String endstring = parsedargs.get(endflag);
+        OffsetDateTime startdate = (startstring == null) ? null : OffsetDateTime.parse(startstring);
+        OffsetDateTime enddate = (endstring == null) ? null : OffsetDateTime.parse(endstring);
+        if (enddate != null && startdate != null && enddate.isBefore(startdate))
+        {
+            System.err.println("End date " + endstring + " specified in " + endflag + " is before the start date " +
+                startstring + " specified in " + startflag + ".");
+            System.exit(2);
+        }
+        List<OffsetDateTime> ret = new ArrayList<>(); // needed because List.of doesn't like null
+        ret.add(startdate);
+        ret.add(enddate);
+        return ret;
+    }
+    
+    /**
+     *  Parses a single argument into a path. If that argument is missing, show
+     *  a single select filechooser. If the filechooser is cancelled, exit. If
+     *  this is an open prompt, then a non-existing file will trigger the 
+     *  filechooser.
+     * 
+     *  @param parsedargs parsed command line arguments
+     *  @param fileoption the argument to look for
+     *  @param prompt the title of the filechooser
+     *  @param error the error to print if nothing was selected in the 
+     *  filechooser
+     *  @param save controls the type of filechooser, true = save, false = open
+     *  @return the path selected by the user
+     *  @throws IOException if a I/O error occurs
+     *  @since 0.02
+     */
+    public static Path parseFileOption(Map<String, String> parsedargs, String fileoption, String prompt, 
+        String error, boolean save) throws IOException
+    {
+        String fpath = parsedargs.get(fileoption);
+        if (fpath != null)
+        {
+            Path p = Paths.get(fpath);
+            if (Files.exists(p) || save)
+                return p;
+        }
+        if (!GraphicsEnvironment.isHeadless())
+        {
+            JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle(prompt);
+            int fcresult = save ? fc.showSaveDialog(null) : fc.showOpenDialog(null);
+            if (fcresult == JFileChooser.APPROVE_OPTION)
+                return fc.getSelectedFile().toPath();
+        }
+        System.err.println(error);
+        System.exit(3);
+        return null; // javac is too dumb to know this isn't necessary
     }
 }

@@ -52,7 +52,7 @@ public class GapFillingTextSearch
     public static void main(String[] args) throws Exception
     {
         Map<String, String> parsedargs = new CommandLineParser()
-            .synopsis("org.wikipedia.tools.SearchArticlesCreated", "[options] query")
+            .synopsis("org.wikipedia.tools.GapFillingTextSearch", "[options] query")
             .addSingleArgumentFlag("--wiki", "example.org", "The wiki to fetch data from (default: en.wikipedia.org)")
             .addSingleArgumentFlag("--user", "Username", "Search articles created by Username")
             .addSingleArgumentFlag("--linksfrom", "wikipage", "The wiki page to get links from")
@@ -134,7 +134,7 @@ public class GapFillingTextSearch
      *  data and then extracts a snippet surrounding the first match.  
      *  <var>searchdata</var> is of the form uniqueID &#8594; page text 
      *  associated with that uniqueID and can be the return value of {@link 
-     *  Users#createdPagesWithText(List, Wiki.RequestHelper) }.
+     *  Users#createdPagesWithText(SequencedCollection, Wiki.RequestHelper) }.
      * 
      *  @param <IDType> the type of uniqueID
      *  @param searchdata a map of uniqueID &#8594; article text associated with
@@ -174,7 +174,7 @@ public class GapFillingTextSearch
      *  search data and then extracts a snippet surrounding the first match.  
      *  <var>searchdata</var> is of the form uniqueID &#8594; page text 
      *  associated with that uniqueID and can be the return value of {@link 
-     *  Users#createdPagesWithText(List, Wiki.RequestHelper)}.
+     *  Users#createdPagesWithText(SequencedCollection, Wiki.RequestHelper)}.
      * 
      *  @param <IDType> the type of uniqueID
      *  @param searchdata a map of uniqueID &#8594; article text associated with 

@@ -54,6 +54,7 @@ public class ExternalLinkPopularityTest
     @Test
     public void setMaxLinks() throws Exception
     {
+        assertThrows(IllegalArgumentException.class, () -> elp.setMaxLinks(0));
         int limit = 250;
         elp.setMaxLinks(limit);
         assertEquals(limit, elp.getMaxLinks());
@@ -82,9 +83,9 @@ public class ExternalLinkPopularityTest
         Set<String> keyset = urlsbydomain.keySet();
         assertEquals(3, keyset.size());
         assertTrue(keyset.containsAll(List.of("example.net", "wikipedia.org", "example.com")));
-        assertEquals(List.of("http://www.example.net"), urlsbydomain.get("example.net"));
-        assertEquals(List.of("https://en.wikipedia.org"), urlsbydomain.get("wikipedia.org"));
-        assertEquals(List.of("http://spam.example.com"), urlsbydomain.get("example.com"));
+        assertEquals(List.of("http://www.example.net/"), urlsbydomain.get("example.net"));
+        assertEquals(List.of("https://en.wikipedia.org/"), urlsbydomain.get("wikipedia.org"));
+        assertEquals(List.of("http://spam.example.com/", "https://example.com/protocol_relative"), urlsbydomain.get("example.com"));
     }
     
     @Test
@@ -98,9 +99,9 @@ public class ExternalLinkPopularityTest
         {
             switch (count++)
             {
-                case 0: assertEquals(Map.entry("obviously.invalid", 0), entry); break;
-                case 1: assertEquals(Map.entry("wikimedia.org", 500), entry); break;
-                case 2: assertEquals(Map.entry("wikipedia.org", 500), entry); break;
+                case 0 -> assertEquals(Map.entry("obviously.invalid", 0), entry);
+                case 1 -> assertEquals(Map.entry("wikimedia.org", 1000), entry);
+                case 2 -> assertEquals(Map.entry("wikipedia.org", 1000), entry);
             }
         }
     }

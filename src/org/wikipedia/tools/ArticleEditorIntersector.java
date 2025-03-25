@@ -25,7 +25,6 @@ import java.nio.file.*;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.*;
-import javax.security.auth.login.*;
 import org.wikipedia.*;
 
 /**
@@ -95,12 +94,9 @@ public class ArticleEditorIntersector
         boolean noadmin = parsedargs.containsKey("--noadmin");
         boolean noanon = parsedargs.containsKey("--noanon");
         String defaultstring = parsedargs.get("default");
-        String earliestdatestring = parsedargs.get("--editsafter");
-        String latestdatestring = parsedargs.get("--editsbefore");
         String filename = parsedargs.get("--file");
         
-        OffsetDateTime editsafter = (earliestdatestring == null) ? null : OffsetDateTime.parse(earliestdatestring);
-        OffsetDateTime editsbefore = (latestdatestring == null) ? null : OffsetDateTime.parse(latestdatestring);
+        List<OffsetDateTime> daterange = CommandLineParser.parseDateRange(parsedargs, "--editsafter", "--editsbefore");
         List<String> articles = null;
         if (defaultstring != null)
             articles = List.of(defaultstring.split("\\s"));
@@ -109,7 +105,7 @@ public class ArticleEditorIntersector
         
         ArticleEditorIntersector aei = new ArticleEditorIntersector(wiki);
         aei.setIgnoringMinorEdits(nominor);
-        aei.setDateRange(editsafter, editsbefore);
+        aei.setDateRange(daterange.get(0), daterange.get(1));
         aei.setIgnoringReverts(noreverts);
         if (adminmode)
         {
@@ -121,7 +117,7 @@ public class ArticleEditorIntersector
         if (user != null)
         {
             Wiki.RequestHelper rh = wiki.new RequestHelper()
-                .withinDateRange(editsafter, editsbefore);
+                .withinDateRange(daterange.get(0), daterange.get(1));
             Stream<Wiki.Revision> stuff = wiki.contribs(user, rh).stream();
             if (adminmode)
             {
@@ -335,25 +331,19 @@ public class ArticleEditorIntersector
             throw new IllegalArgumentException("At least two articles are needed to derive a meaningful intersection.");
         
         // fetch histories and group by user
+        // If a network error occurs when fetching the live history, that page 
+        // will be skipped. If a network or privilege error occurs when fetching 
+        // deleted history, that will be skipped with the live history returned.
+        ThrowingFunction<String, Stream<Wiki.Revision>> tf = article ->
+        {
+            Stream<Wiki.Revision> str = wiki.getPageHistory(article, rh).stream();
+            if (adminmode)
+                str = Stream.concat(str, wiki.getDeletedHistory(article, rh).stream());
+            return str;
+        };
         Stream<Wiki.Revision> revstream = pageset.stream()
-            .flatMap(article ->  
-            {
-                Stream<Wiki.Revision> str = Stream.empty();
-                try
-                {
-                    str = wiki.getPageHistory(article, rh).stream();
-                    if (adminmode)
-                        str = Stream.concat(str, wiki.getDeletedHistory(article, rh).stream());
-                }
-                catch (IOException | SecurityException ignored)
-                {
-                    // If a network error occurs when fetching the live history,
-                    // that page will be skipped. If a network or privilege error 
-                    // occurs when fetching deleted history, that will be skipped
-                    // with the live history returned.
-                }
-                return str;
-            }).filter(rev -> rev.getUser() != null); // remove deleted/suppressed usernames
+            .flatMap(tf)
+            .filter(rev -> rev.getUser() != null); // remove deleted/suppressed usernames
         if (nominor)
             revstream = revstream.filter(rev -> !rev.isMinor());
         if (noreverts)
@@ -428,7 +418,7 @@ public class ArticleEditorIntersector
      *  @return a map with page &#8594; list of revisions made
      *  @throws IOException if a network error occurs
      */
-    public Map<String, List<Wiki.Revision>> intersectEditors(List<String> users) throws IOException
+    public Map<String, List<Wiki.Revision>> intersectEditors(SequencedCollection<String> users) throws IOException
     {
         Map<String, Boolean> options = new HashMap<>();
         if (nominor)
@@ -443,20 +433,10 @@ public class ArticleEditorIntersector
         
         if (adminmode)
         {
-            Stream<Wiki.Revision> revstream2 = users.stream().flatMap(user -> 
-            {
-                try
-                {
-                    return wiki.deletedContribs(user, rh).stream();
-                }
-                catch (IOException | SecurityException ex)
-                {
-                    // If a network or privilege error occurs when fetching 
-                    // deleted contributions, that will be skipped with live 
-                    // edits returned.
-                    return Stream.empty();
-                }
-            });
+            // If a network or privilege error occurs when fetching deleted 
+            // contributions, that will be skipped with live edits returned.
+            ThrowingFunction<String, Stream<Wiki.Revision>> tf = user -> wiki.deletedContribs(user, rh).stream();
+            Stream<Wiki.Revision> revstream2 = users.stream().flatMap(tf);
             revstream = Stream.concat(revstream, revstream2);
         }
         // we cannot filter by sizediff here, the MediaWiki API does not return

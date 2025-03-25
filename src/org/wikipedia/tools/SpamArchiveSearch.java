@@ -1,6 +1,6 @@
 /**
  *  @(#)SpamArchiveSearch.java 0.01 06/07/2011
- *  Copyright (C) 2011 - 2013 MER-C
+ *  Copyright (C) 2011 - 2022 MER-C
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Affero General Public License as
@@ -21,7 +21,7 @@ package org.wikipedia.tools;
 import java.io.*;
 import java.util.*;
 import javax.swing.JOptionPane;
-import org.wikipedia.Wiki;
+import org.wikipedia.*;
 
 /**
  *  A crude replacement for Eagle's spam archive search tool.
@@ -42,23 +42,21 @@ public class SpamArchiveSearch
             System.exit(0);
         StringBuilder buffer = new StringBuilder(10000);
         ArrayList<Map<String, Object>> results = archiveSearch(query);
-        buffer.append("<h2>Searching for \"");
-        buffer.append(query);
-        buffer.append("\".</h2>\n<ul>\n");
+        buffer.append("""
+            <h2>Results for "%s"</h2>
+            <ul>
+            """.formatted(query));
         results.forEach(result ->
         {
             String page = (String)result.get("title");
-            buffer.append("<li><a href=\"//");
-            buffer.append(page.contains("Talk:Spam blacklist") ? "meta.wikimedia" : "en.wikipedia");
-            buffer.append(".org/wiki/");
-            buffer.append(page);
-            buffer.append("\">");
-            buffer.append(page);
-            buffer.append("</a>\n");
+            buffer.append("""
+                <li><a href="//%s.org/wiki/%s">%s</a>
+                """.formatted(page.contains("Talk:Spam blacklist") ? "meta.wikimedia" : "en.wikipedia", page, page));
         });
-        buffer.append("</ul>\n<p>");
-        buffer.append(results.size());
-        buffer.append(" results.\n");
+        buffer.append("""
+            </ul>
+            <p>%d results.
+            """.formatted(results.size()));
         System.out.println(buffer.toString());
     }
 
@@ -68,6 +66,7 @@ public class SpamArchiveSearch
      * 
      *  <ul>
      *  <li><a href="//meta.wikimedia.org/wiki/WM:SBL">Global spam blacklist</a>
+     *  <li><a href="//meta.wikimedia.org/wiki/Wikiproject:Antispam">Wikiproject Antispam</a>
      *  <li><a href="//en.wikipedia.org/wiki/WP:SBL">en.wikipedia spam blacklist</a>
      *  <li><a href="//en.wikipedia.org/wiki/MediaWiki_talk:Spam-whitelist">en.wikipedia spam whitelist</a>
      *  <li><a href="//en.wikipedia.org/wiki/WT:WPSPAM">en.wikipedia WikiProject Spam</a>
@@ -83,14 +82,16 @@ public class SpamArchiveSearch
      */
     public static ArrayList<Map<String, Object>> archiveSearch(String query) throws IOException
     {
-        Wiki enWiki = Wiki.newSession("en.wikipedia.org");
-        Wiki meta = Wiki.newSession("meta.wikimedia.org");
+        WMFWikiFarm sessions = WMFWikiFarm.instance();
+        Wiki enWiki = sessions.sharedSession("en.wikipedia.org");
+        Wiki meta = sessions.sharedSession("meta.wikimedia.org");
         enWiki.setMaxLag(-1);
         meta.setMaxLag(-1);
         
         // there's some silly api bugs
         ArrayList<Map<String, Object>> results = new ArrayList<>(20);
         results.addAll(meta.search(query + " \"spam blacklist\"", Wiki.TALK_NAMESPACE));
+        results.addAll(meta.search(query + " wikiproject antispam", Wiki.MAIN_NAMESPACE, Wiki.TALK_NAMESPACE));
         results.addAll(enWiki.search(query + " \"spam blacklist\"", Wiki.MEDIAWIKI_TALK_NAMESPACE));
         results.addAll(enWiki.search(query + " \"spam whitelist\"", Wiki.MEDIAWIKI_TALK_NAMESPACE));
         results.addAll(enWiki.search(query + " \"wikiproject spam\"", Wiki.PROJECT_TALK_NAMESPACE));

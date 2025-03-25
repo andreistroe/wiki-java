@@ -77,17 +77,15 @@ public class NPPCheck
          */
         public static Mode fromString(String s)
         {
-            if (s == null)
-                return null;
-            switch (s)
+            return switch (s)
             {
-                case "patrols": return PATROLS;
-                case "drafts": return DRAFTS;
-                case "userspace": return USERSPACE;
-                case "unpatrolled": return UNPATROLLED;
-                case "redirects": return REDIRECTS;
-                default: return null;
-            }
+                case "patrols" -> PATROLS;
+                case "drafts" -> DRAFTS;
+                case "userspace" -> USERSPACE;
+                case "unpatrolled" -> UNPATROLLED;
+                case "redirects" -> REDIRECTS;
+                case null, default -> null;
+            };
         }
         
         /**
@@ -117,6 +115,8 @@ public class NPPCheck
     public static void main(String[] args) throws IOException
     {
         Map<String, String> parsedargs = new CommandLineParser()
+            .synopsis("org.wikipedia.tools.NPPCheck", "[options]")
+            .description("Tool for reviewing the work of new page patrollers")
             .addBooleanFlag("--unpatrolled", "Output results for unpatrolled new articles (REQUIRES NPP RIGHTS)")
             .addBooleanFlag("--patrols", "Output results from new pages patrol")
             .addBooleanFlag("--userspace", "Output results for moves from user to main")
@@ -124,12 +124,16 @@ public class NPPCheck
             .addBooleanFlag("--redirects", "Output results for expanded redirects")
             .addSingleArgumentFlag("--user", "user", "Output results for this user only "
                 + "(requires one of --patrols, --userspace or --drafts)")
+            .addSingleArgumentFlag("--start", "date", "Include patrols made after this date (ISO format).")
+            .addSingleArgumentFlag("--end", "date", "Include patrols made before this date (ISO format).")
             .addVersion("0.01")
             .addHelp()
             .parse(args);
         String user = parsedargs.get("--user");
+        List<OffsetDateTime> dt = CommandLineParser.parseDateRange(parsedargs, "--start", "--end");
         
-        WMFWiki enWiki = WMFWiki.newSession("en.wikipedia.org");
+        WMFWikiFarm sessions = WMFWikiFarm.instance();
+        WMFWiki enWiki = sessions.sharedSession("en.wikipedia.org");
         NPPCheck check = new NPPCheck(enWiki);
         
         // NPPBrowser mode (for bulk fetching)
@@ -139,7 +143,7 @@ public class NPPCheck
             check.setMode(Mode.UNPATROLLED);
             check.setReviewer(null);
             
-            List<? extends Wiki.Event> le = check.fetchLogs(null, null);
+            List<? extends Wiki.Event> le = check.fetchLogs(dt.get(0), dt.get(1));
             System.out.println(check.outputTable(le));
         }
         
@@ -149,7 +153,7 @@ public class NPPCheck
             check.setMode(Mode.PATROLS);
             check.setReviewer(user);
         
-            List<? extends Wiki.Event> le = check.fetchLogs(null, null);
+            List<? extends Wiki.Event> le = check.fetchLogs(dt.get(0), dt.get(1));
             System.out.println("==NPP patrols ==");        
             if (le.isEmpty())
                 System.out.println("No new pages patrolled.");
@@ -163,7 +167,7 @@ public class NPPCheck
             check.setMode(Mode.DRAFTS);
             check.setReviewer(user);
             
-            List<? extends Wiki.Event> le = check.fetchLogs(null, null);
+            List<? extends Wiki.Event> le = check.fetchLogs(dt.get(0), dt.get(1));
             System.out.println("==Pages moved from draft to main ==");
             if (le.isEmpty())
                 System.out.println("No pages moved from draft to main.");
@@ -177,7 +181,7 @@ public class NPPCheck
             check.setMode(Mode.USERSPACE);
             check.setReviewer(user);
             
-            List<? extends Wiki.Event> le = check.fetchLogs(null, null);
+            List<? extends Wiki.Event> le = check.fetchLogs(dt.get(0), dt.get(1));
             System.out.println("==Pages moved from user to main ==");
             if (le.isEmpty())
                 System.out.println("No pages moved from user to main.");
@@ -191,7 +195,7 @@ public class NPPCheck
             check.setMode(Mode.REDIRECTS);
             check.setReviewer(null);
             
-            List<? extends Wiki.Event> le = check.fetchLogs(null, null);
+            List<? extends Wiki.Event> le = check.fetchLogs(dt.get(0), dt.get(1));
             System.out.println("==Expanded redirects ==");
             if (le.isEmpty())
                 System.out.println("No expanded redirects.");
@@ -383,15 +387,11 @@ public class NPPCheck
         List<String> pages = new ArrayList<>();
         for (Wiki.Event event : events)
         {
-            String title;
-            if (event instanceof Wiki.LogEntry)
+            pages.add(switch(event)
             {
-                Wiki.LogEntry log = (Wiki.LogEntry)event;
-                title = log.getType().equals(Wiki.MOVE_LOG) ? log.getDetails().get("target_title") : event.getTitle();
-            }
-            else
-                title = event.getTitle();
-            pages.add(title);
+                case Wiki.LogEntry log when log.getType().equals(Wiki.MOVE_LOG) -> log.getDetails().get("target_title");
+                default -> event.getTitle();
+            });
         }
         
         // account for pages subsequently moved in namespace
@@ -416,15 +416,11 @@ public class NPPCheck
         List<String> pages = new ArrayList<>();
         for (Wiki.Event event : events)
         {
-            String title;
-            if (event instanceof Wiki.LogEntry)
+            pages.add(switch(event)
             {
-                Wiki.LogEntry log = (Wiki.LogEntry)event;
-                title = log.getType().equals(Wiki.MOVE_LOG) ? log.getDetails().get("target_title") : event.getTitle();
-            }
-            else
-                title = event.getTitle();
-            pages.add(title);
+                case Wiki.LogEntry log when log.getType().equals(Wiki.MOVE_LOG) -> log.getDetails().get("target_title");
+                default -> event.getTitle();
+            });
         }
         
         // account for pages subsequently moved in namespace
@@ -530,7 +526,7 @@ public class NPPCheck
                     registrationdate = creator.getRegistrationDate();
                     if (registrationdate != null)
                         dt_account = Duration.between(registrationdate, createdate);
-                    blocked = creator.isBlocked();
+                    blocked = creator.getBlockDetails() != null;
                 }
             }
             
@@ -593,22 +589,13 @@ public class NPPCheck
      */
     public String outputTableHeader()
     {
-        StringBuilder header = new StringBuilder("{| class=\"wikitable sortable\"\n! ");
-        if (mode.requiresDrafts())
-            header.append("Draft !! ");
-        header.append("Title !! Create timestamp !! ");
-        if (mode.requiresReviews())
-        {
-            header.append("Review timestamp !! Age at review !! ");
-            if (reviewer != null)
-                header.append("Time between reviews !! ");
-        }
-        header.append("Size !! Author !! Author registration timestamp !! ");
-        header.append("Author edit count !! Author age at creation !! Author blocked !! ");
-        if (mode.requiresReviews() && reviewer == null)
-            header.append("Reviewer !! Reviewer edit count !! ");
-        header.append("Snippet");
-        header.append("\n");
-        return header.toString();
+        return """
+            {| class="wikitable sortable"
+            ! %sTitle !! Create timestamp !! %s%sSize !! Author !! Author registration timestamp !! \
+            Author edit count !! Author age at creation !! Author blocked !! %sSnippet
+            """.formatted(mode.requiresDrafts() ? "Draft !! " : "", 
+            mode.requiresReviews() ? "Review timestamp !! Age at review !! " : "",
+            mode.requiresReviews() && reviewer != null ? "Time between reviews !! " : "",
+            mode.requiresReviews() && reviewer == null ? "Reviewer !! Reviewer edit count !! " : "");
     }
 }
