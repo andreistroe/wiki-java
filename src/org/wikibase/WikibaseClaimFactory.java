@@ -180,6 +180,7 @@ public class WikibaseClaimFactory {
                     try {
                         String urlValue = datavalueNode.getAttributes().getNamedItem("value").getNodeValue();
                         String decUrlValue = URLDecoder.decode(urlValue, StandardCharsets.UTF_8.name());
+                        /*
                         URL decUrl = new URL(decUrlValue);
                         URI uri = null;
                         try {
@@ -187,6 +188,8 @@ public class WikibaseClaimFactory {
                         } catch (Exception e) {
                             uri = decUrl.toURI();
                         }
+                        */
+                        URI uri = new URI(decUrlValue);
                             
                         snak.setData(new URLData(uri));
                     } catch (Exception e) {
