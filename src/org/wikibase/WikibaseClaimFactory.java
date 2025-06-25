@@ -179,8 +179,8 @@ public class WikibaseClaimFactory {
                 if ("datavalue".equalsIgnoreCase(datavalueNode.getNodeName())) {
                     try {
                         String urlValue = datavalueNode.getAttributes().getNamedItem("value").getNodeValue();
-                        String decUrlValue = URLDecoder.decode(urlValue, StandardCharsets.UTF_8.name());
                         /*
+                        String decUrlValue = URLDecoder.decode(urlValue, StandardCharsets.UTF_8.name());
                         URL decUrl = new URL(decUrlValue);
                         URI uri = null;
                         try {
@@ -189,7 +189,7 @@ public class WikibaseClaimFactory {
                             uri = decUrl.toURI();
                         }
                         */
-                        URI uri = new URI(decUrlValue);
+                        URI uri = new URI(urlValue);
                             
                         snak.setData(new URLData(uri));
                     } catch (Exception e) {
