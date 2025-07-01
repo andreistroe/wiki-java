@@ -20,7 +20,9 @@ import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Month;
 import java.time.YearMonth;
 import java.time.chrono.IsoEra;
 import java.time.format.DateTimeFormatter;
@@ -42,7 +44,7 @@ public class Time extends WikibaseData {
     private int timezone = 0;
     private YearMonth yearMonth = null;
     private LocalDate date;
-    private LocalTime localTime;
+    private LocalTime localTime = LocalTime.of(0, 0);
     private URL calendarModel;
     private long year;
 
@@ -192,5 +194,11 @@ public class Time extends WikibaseData {
         this();
         this.date = date;
         this.precision = 11;
+    }
+    
+    public LocalDateTime getLocalDateTime() {
+        return null != date ? LocalDateTime.of(date, localTime) : 
+            null != yearMonth ? LocalDateTime.of(yearMonth.atDay(1), localTime) :
+            0 != year ? LocalDateTime.of((int) year, Month.JANUARY, 1, 0, 0): null;
     }
 }
