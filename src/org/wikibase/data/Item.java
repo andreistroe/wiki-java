@@ -40,8 +40,9 @@ public class Item extends WikibaseData {
         sbuild.append('{');
         sbuild.append("\"entity-type\":\"item\"");
         sbuild.append(',');
-        sbuild.append("\"numeric-id\":\"").append(ent.getId().startsWith("Q") ? ent.getId().substring(1) : ent.getId())
-            .append("\"");
+        sbuild.append("\"numeric-id\":").append(ent.getId().startsWith("Q") ? ent.getId().substring(1) : ent.getId());
+        sbuild.append(',');
+        sbuild.append("\"id\":\"").append(ent.getId().startsWith("Q") ? ent.getId() : ("Q" + ent.getId())).append("\"");
         sbuild.append('}');
         return sbuild.toString();
     }
