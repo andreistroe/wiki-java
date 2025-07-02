@@ -245,6 +245,8 @@ public class Wikibase extends Wiki {
     }
 
     public String createItem(Entity createdEntity) throws IOException, WikibaseException {
+        throttle();
+        
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -305,6 +307,8 @@ public class Wikibase extends Wiki {
      * @throws IOException
      */
     public String addClaim(String entityId, Claim claim) throws WikibaseException, IOException {
+        throttle();
+
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -365,6 +369,8 @@ public class Wikibase extends Wiki {
      * @throws IOException
      */
     public String editClaim(Claim claim) throws WikibaseException, IOException {
+        throttle();
+
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -421,6 +427,8 @@ public class Wikibase extends Wiki {
      * @throws IOException
      */
     public String removeClaim(String claimId) throws WikibaseException, IOException {
+        throttle();
+
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -461,6 +469,8 @@ public class Wikibase extends Wiki {
 
     public String addQualifier(String claimGUID, String propertyId, WikibaseData qualifier)
         throws WikibaseException, IOException {
+        throttle();
+
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -478,6 +488,8 @@ public class Wikibase extends Wiki {
     }
 
     public String addReference(String claimGUID, List<Snak> ref) throws IOException, WikibaseException {
+        throttle();
+
         String edittoken = obtainToken();
 
         Map<String, String> getParams = new HashMap<>();
@@ -525,6 +537,8 @@ public class Wikibase extends Wiki {
     }
 
     public void setLabel(String qid, String language, String label) throws IOException, WikibaseException {
+        throttle();
+
         String token = obtainToken();
         Map<String, String> getParams = new HashMap<>();
         getParams.put("action", "wbsetlabel");
@@ -541,6 +555,8 @@ public class Wikibase extends Wiki {
     }
 
     public void setDescription(String qid, String language, String description) throws IOException, WikibaseException {
+        throttle();
+
         String token = obtainToken();
         Map<String, String> getParams = new HashMap<>();
         getParams.put("action", "wbsetdescription");
