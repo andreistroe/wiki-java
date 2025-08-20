@@ -118,15 +118,7 @@ public class WikibaseEntityFactory {
             Entity entity = new Entity("Q" + idMatcher.group(2));
             loadItem(entity, entityNode);
             return entity;
-        } catch (XPathExpressionException e) {
-            throw new WikibaseException(e);
-        } catch (DOMException e) {
-            throw new WikibaseException(e);
-        } catch (ParserConfigurationException e) {
-            throw new WikibaseException(e);
-        } catch (SAXException e) {
-            throw new WikibaseException(e);
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new WikibaseException(e);
         }
 
