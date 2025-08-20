@@ -189,9 +189,13 @@ public class WikibaseClaimFactory {
                             uri = decUrl.toURI();
                         }
                         */
-                        URI uri = new URI(urlValue);
+                        try {
+                            URI uri = new URI(urlValue);
+                            snak.setData(new URLData(uri));
+                        } catch (Throwable t) {
+                            snak.setData(new URLData(urlValue));
+                        }
                             
-                        snak.setData(new URLData(uri));
                     } catch (Exception e) {
                         throw new WikibaseException(e);
                     }
