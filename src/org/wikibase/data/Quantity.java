@@ -91,4 +91,19 @@ public class Quantity extends WikibaseData {
         sbuild.append('}');
         return sbuild.toString();
     }
+    
+    public boolean equals(Object obj)
+    {
+        if (this == obj)
+        {
+            return true;
+        }
+        if (!(obj instanceof Quantity))
+        {
+            return false;
+        }
+        Quantity other = (Quantity) obj;
+        return Double.compare(amount, other.amount) == 0 && Double.compare(lowerBound, other.lowerBound) == 0 && Double.compare(upperBound, other.upperBound) == 0
+            && (unit != null ? unit.equals(other.unit) : other.unit == null);
+    }
 }

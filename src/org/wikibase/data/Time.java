@@ -201,4 +201,56 @@ public class Time extends WikibaseData {
             null != yearMonth ? LocalDateTime.of(yearMonth.atDay(1), localTime) :
             0 != year ? LocalDateTime.of((int) year, Month.JANUARY, 1, 0, 0): null;
     }
+    
+    @Override
+    public int hashCode() {
+        int result = Long.hashCode(year);
+        result = 31 * result + precision;
+        result = 31 * result + before;
+        result = 31 * result + after;
+        result = 31 * result + timezone;
+        result = 31 * result + (yearMonth != null ? yearMonth.hashCode() : 0);
+        result = 31 * result + (date != null ? date.hashCode() : 0);
+        result = 31 * result + (localTime != null ? localTime.hashCode() : 0);
+        result = 31 * result + (calendarModel != null ? calendarModel.hashCode() : 0);
+        return result;
+    }
+    
+    public boolean equals(Object obj)
+    {
+        if (this == obj)
+        {
+            return true;
+        }
+        if (!(obj instanceof Time))
+        {
+            return false;
+        }
+        Time other = (Time) obj;
+        if (precision != other.precision)
+        {
+            return false;
+        }
+        if (before != other.before || after != other.after || timezone != other.timezone)
+        {
+            return false;
+        }
+        if (null != yearMonth && null != other.yearMonth && !yearMonth.equals(other.yearMonth))
+        {
+            return false;
+        }
+        if (null != date && null != other.date && !date.equals(other.date))
+        {
+            return false;
+        }
+        if (null != localTime && null != other.localTime && !localTime.equals(other.localTime))
+        {
+            return false;
+        }
+        if (null != calendarModel && null != other.calendarModel && !calendarModel.equals(other.calendarModel))
+        {
+            return false;
+        }
+        return year == other.year;
+    }
 }

@@ -66,8 +66,10 @@ public class Snak {
 
     public String toJSON() {
         StringBuilder sbuild = new StringBuilder("{");
-        sbuild.append("\"snaktype\":\"value\"").append(',').append("\"property\":\"").append("P")
+        sbuild.append("\"snaktype\":\"value\"");
+        sbuild.append(',').append("\"property\":\"").append("P")
             .append(property.getId().startsWith("P") ? property.getId().substring(1) : property.getId()).append("\"");
+        
         sbuild.append(',');
         sbuild.append("\"datavalue\":").append(data.toJSON());
         if (null != datatype) {
@@ -82,5 +84,47 @@ public class Snak {
     public String toString() {
         return "Snak [data=" + data + ", prop=" + property + ", datatype=" + datatype + "]";
     }
+    
 
+    @Override
+    public int hashCode()
+    {
+        return data.hashCode() + property.hashCode();
+    }
+
+    public boolean equals(Object obj)
+    {
+        if (this == obj)
+        {
+            return true;
+        }
+        if (!(obj instanceof Snak))
+        {
+            return false;
+        }
+        Snak other = (Snak) obj;
+        if (data == null)
+        {
+            if (other.data != null)
+            {
+                return false;
+            }
+        }
+        else if (!data.equals(other.data))
+        {
+            return false;
+        }
+        if (property == null)
+        {
+            if (other.property != null)
+            {
+                return false;
+            }
+        }
+        else if (!property.equals(other.property))
+        {
+            return false;
+        }
+        return true;
+    }
 }

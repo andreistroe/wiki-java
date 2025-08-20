@@ -48,4 +48,14 @@ public class StringData extends WikibaseData {
     public String toString() {
         return "StringData [value=" + value + "]";
     }
+    
+    public boolean equals(Object obj)
+    {
+        if (this == obj)
+            return true;
+        if (obj == null || getClass() != obj.getClass())
+            return false;
+        StringData that = (StringData) obj;
+        return value != null ? value.equals(that.value) : that.value == null;
+    }
 }

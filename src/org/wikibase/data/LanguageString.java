@@ -16,6 +16,8 @@
 */
 package org.wikibase.data;
 
+import java.util.Objects;
+
 public class LanguageString extends WikibaseData {
     private String language;
     private String text;
@@ -56,5 +58,10 @@ public class LanguageString extends WikibaseData {
         sb.append("\"language\":\"").append(language).append('\"');
         sb.append('}');
         return sb.toString();
+    }
+ 
+    public boolean equals(Object obj) {
+       return null != obj && (obj instanceof LanguageString) && Objects.equals(((LanguageString) obj).language, language)
+           && Objects.equals(((LanguageString) obj).text, text);
     }
 }

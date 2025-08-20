@@ -16,6 +16,8 @@
 */
 package org.wikibase.data;
 
+import java.util.Objects;
+
 /**
  * A data type for a wikibase property representing another entity.
  * 
@@ -56,5 +58,17 @@ public class Item extends WikibaseData {
     public String toString()
     {
         return (null == ent) ? "" : ent.toString(); 
+    }
+    
+    public boolean equals(Object obj)
+    {
+        if (null == obj) return false;
+        if (!(obj instanceof Item)) return false;
+        Item other = (Item) obj;
+        
+        String thisItemId = ent.getId().startsWith("Q") ? ent.getId().substring(1) : ent.getId();
+        String otherItemId = other.ent.getId().startsWith("Q") ? other.ent.getId().substring(1) : other.ent.getId();
+        
+        return Objects.equals(thisItemId, otherItemId);
     }
 }

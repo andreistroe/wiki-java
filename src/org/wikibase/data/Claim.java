@@ -23,7 +23,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * A Wikidata claim.
@@ -31,7 +33,8 @@ import java.util.Set;
  * @author acstroe
  *
  */
-public class Claim {
+public class Claim
+{
 
     private String id;
     private String type;
@@ -41,31 +44,39 @@ public class Claim {
     private Map<Property, Set<Snak>> qualifiers = new HashMap<Property, Set<Snak>>();
     private List<Set<Snak>> references = new ArrayList<Set<Snak>>();
 
-    public Claim() {
+    public Claim()
+    {
         super();
         // TODO Auto-generated constructor stub
     }
 
-    public Claim(Property property, WikibaseData value) {
+    public Claim(Property property, WikibaseData value)
+    {
         super();
         this.property = property;
         this.mainsnak = new Snak(value, property);
     }
 
-    public WikibaseData getValue() {
+    public WikibaseData getValue()
+    {
         return null != mainsnak ? mainsnak.getData() : null;
     }
 
-    public void setValue(WikibaseData value) {
-        if (mainsnak != null) {
+    public void setValue(WikibaseData value)
+    {
+        if (mainsnak != null)
+        {
             mainsnak.setData(value);
-        } else {
+        }
+        else
+        {
             mainsnak = new Snak(value, this.property);
         }
     }
 
     @Override
-    public int hashCode() {
+    public int hashCode()
+    {
         final int prime = 31;
         int result = 1;
         result = prime * result + ((id == null) ? 0 : id.hashCode());
@@ -73,7 +84,8 @@ public class Claim {
     }
 
     @Override
-    public boolean equals(Object obj) {
+    public boolean equals(Object obj)
+    {
         if (this == obj)
             return true;
         if (obj == null)
@@ -81,105 +93,150 @@ public class Claim {
         if (getClass() != obj.getClass())
             return false;
         Claim other = (Claim) obj;
-        if (id == null) {
+        if (id == null)
+        {
             if (other.id != null)
                 return false;
-        } else if (!id.equals(other.id))
+        }
+        else if (!id.equals(other.id))
             return false;
         return true;
     }
 
-    public String getId() {
+    public static boolean contentEquals(final Claim claim1, final Claim claim2)
+    {
+        if (claim1 == claim2)
+        {
+            return true;
+        }
+        if (Stream.of(claim1, claim2).filter(Objects::isNull).count() == 1)
+        {
+            return false;
+        }
+        return Objects.equals(claim1.type, claim2.type) && Objects.equals(claim1.rank, claim2.rank) && Objects.equals(claim1.property, claim2.property)
+            && Objects.equals(claim1.mainsnak, claim2.mainsnak) && claim1.qualifiers.size() == claim2.qualifiers.size() && claim1.qualifiers.entrySet().stream().allMatch(e -> {
+                Set<Snak> snaks2 = claim2.qualifiers.get(e.getKey());
+                return snaks2.size() == e.getValue().size() && snaks2.stream().allMatch(s -> {
+                    Set<Snak> esnaks = e.getValue();
+                    return esnaks.contains(s);
+                });
+            }) && Objects.equals(claim1.qualifiers, claim2.qualifiers) && Objects.equals(claim1.references, claim2.references);
+    }
+
+    public String getId()
+    {
         return id;
     }
 
-    public void setId(String id) {
+    public void setId(String id)
+    {
         this.id = id;
     }
 
-    public String getType() {
+    public String getType()
+    {
         return type;
     }
 
-    public void setType(String type) {
+    public void setType(String type)
+    {
         this.type = type;
     }
 
-    public Snak getMainsnak() {
+    public Snak getMainsnak()
+    {
         return mainsnak;
     }
 
-    public void setMainsnak(Snak mainsnak) {
+    public void setMainsnak(Snak mainsnak)
+    {
         this.mainsnak = mainsnak;
     }
 
-    public Rank getRank() {
+    public Rank getRank()
+    {
         return rank;
     }
 
-    public void setRank(Rank rank) {
+    public void setRank(Rank rank)
+    {
         this.rank = rank;
     }
 
-    public List<Set<Snak>> getReferences() {
+    public List<Set<Snak>> getReferences()
+    {
         return Collections.unmodifiableList(references);
     }
 
-    public Property getProperty() {
+    public Property getProperty()
+    {
         return property;
     }
 
-    public void setProperty(Property property) {
+    public void setProperty(Property property)
+    {
         this.property = property;
     }
 
-    public Map<Property, Set<Snak>> getQualifiers() {
+    public Map<Property, Set<Snak>> getQualifiers()
+    {
         return Collections.unmodifiableMap(qualifiers);
     }
 
-    public void addQualifier(Property property, WikibaseData data) {
+    public void addQualifier(Property property, WikibaseData data)
+    {
         Set<Snak> dataset = qualifiers.get(property);
-        if (null == dataset) {
+        if (null == dataset)
+        {
             dataset = new HashSet<Snak>();
         }
         dataset.add(new Snak(data, property));
         qualifiers.put(property, dataset);
     }
 
-    public void addReference(Set<Snak> ref) {
+    public void addReference(Set<Snak> ref)
+    {
         references.add(ref);
     }
 
     @Override
-    public String toString() {
+    public String toString()
+    {
         return "Claim [id=" + id + ", property=" + property + ", snak=" + mainsnak + "]";
     }
 
-    public String toJSON() {
+    public String toJSON()
+    {
         StringBuilder sbuild = new StringBuilder("{");
-        if (null != id && 0 < id.trim().length()) {
+        if (null != id && 0 < id.trim().length())
+        {
             sbuild.append("\"id\":\"").append(id).append("\",");
         }
         sbuild.append("\"mainsnak\":");
 
         sbuild.append(mainsnak.toJSON());
-        if (!qualifiers.isEmpty()) {
+        if (!qualifiers.isEmpty())
+        {
             sbuild.append(',');
             sbuild.append("\"qualifiers\": {");
             boolean first = true;
-            for (Entry<Property, Set<Snak>> qualEntry : qualifiers.entrySet()) {
-                String propId = qualEntry.getKey().getId().startsWith("P") ? qualEntry.getKey().getId()
-                    : ("P" + qualEntry.getKey().getId());
-                if (!first) {
+            for (Entry<Property, Set<Snak>> qualEntry : qualifiers.entrySet())
+            {
+                String propId = qualEntry.getKey().getId().startsWith("P") ? qualEntry.getKey().getId() : ("P" + qualEntry.getKey().getId());
+                if (!first)
+                {
                     sbuild.append(',');
                 }
                 first = false;
                 sbuild.append('\"').append(propId).append("\":");
-                if (!qualEntry.getValue().isEmpty()) {
+                if (!qualEntry.getValue().isEmpty())
+                {
                     boolean started = false;
                     sbuild.append('[');
-                    for (Snak eachSnak : qualEntry.getValue()) {
-                        if (started) {
+                    for (Snak eachSnak : qualEntry.getValue())
+                    {
+                        if (started)
+                        {
                             sbuild.append(',');
                         }
                         sbuild.append(eachSnak.toJSON());
@@ -196,20 +253,25 @@ public class Claim {
         sbuild.append(',');
         sbuild.append("\"rank\":\"").append((null != rank ? rank : Rank.NORMAL).toString()).append("\"");
 
-        if (!references.isEmpty()) {
-            sbuild.append(','); 
+        if (!references.isEmpty())
+        {
+            sbuild.append(',');
             sbuild.append("\"references\": [");
             boolean first = true;
-            for (Set<Snak> ref : references) {
-                if (!first) {
+            for (Set<Snak> ref : references)
+            {
+                if (!first)
+                {
                     sbuild.append(',');
                 }
                 sbuild.append('{').append("\"snaks\":");
                 first = false;
                 sbuild.append('{');
                 boolean firstSnak = true;
-                for (Snak eachSnak : ref) {
-                    if (!firstSnak) {
+                for (Snak eachSnak : ref)
+                {
+                    if (!firstSnak)
+                    {
                         sbuild.append(',');
                     }
                     firstSnak = false;
