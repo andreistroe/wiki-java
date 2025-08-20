@@ -17,13 +17,21 @@
 package org.wikibase.data;
 
 import java.net.URI;
+import java.util.Optional;
 
 public class URLData extends WikibaseData {
     private URI url;
+    private String rawUrl;
 
     public URLData(URI url) {
         super();
         this.url = url;
+    }
+
+    public URLData(String urlValue)
+    {
+        super();
+        this.rawUrl = urlValue;
     }
 
     public URI getUrl() {
@@ -36,7 +44,7 @@ public class URLData extends WikibaseData {
 
     @Override
     public String toString() {
-        return "URLData [url=" + url + "]";
+        return "URLData [url=" + getURLString() + "]";
     }
 
     @Override
@@ -46,7 +54,20 @@ public class URLData extends WikibaseData {
 
     @Override
     public String valueToJSON() {
-        return "\"" + url + "\"";
+        return "\"" + getURLString() + "\"";
     }
 
+    public String getURLString() {
+        return Optional.ofNullable(url).map(Object::toString).orElse(rawUrl);
+    }
+    
+    public boolean equals(Object obj)
+    {
+        if (this == obj)
+            return true;
+        if (!(obj instanceof URLData))
+            return false;
+        URLData other = (URLData) obj;
+        return getURLString().equals(other.getURLString());
+    }
 }
