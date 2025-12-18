@@ -89,7 +89,10 @@ public class Snak {
     @Override
     public int hashCode()
     {
-        return data.hashCode() + property.hashCode();
+        int result = 1;
+        result = 31 * result + (null == data ? 0 : data.hashCode());
+        result = 31 * result + (null == property ? 0 : property.hashCode());
+        return result;
     }
 
     public boolean equals(Object obj)
