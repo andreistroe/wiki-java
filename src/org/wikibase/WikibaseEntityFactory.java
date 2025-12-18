@@ -17,7 +17,6 @@
 package org.wikibase;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -25,27 +24,22 @@ import java.util.regex.Pattern;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
-import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 
-import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.wikibase.data.Entity;
 import org.wikibase.data.Property;
 import org.wikibase.data.Sitelink;
-import org.xml.sax.SAXException;
 
 public class WikibaseEntityFactory {
-    private static Map<String, Entity> items = new HashMap<String, Entity>();
     private static Pattern ENTITY_ID_PATTERN = Pattern.compile("\\s*(q|Q)?(\\d+)\\s*");
 
-    public static Entity getWikibaseItem(String text) throws WikibaseException {
+    public static Entity getWikibaseItem(String text) throws WikibaseEntityParsingException {
         Node entityNode = null;
         try {
             DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
@@ -119,7 +113,7 @@ public class WikibaseEntityFactory {
             loadItem(entity, entityNode);
             return entity;
         } catch (Exception e) {
-            throw new WikibaseException(e);
+            throw new WikibaseEntityParsingException(e, text);
         }
 
     }

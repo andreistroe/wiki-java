@@ -104,7 +104,14 @@ public class Wikibase extends Wiki {
 
         final String text = makeApiCall(getParams, postParams, "getWikibaseItemBySiteAndTitle");
 
-        return WikibaseEntityFactory.getWikibaseItem(text);
+        try
+        {
+            return WikibaseEntityFactory.getWikibaseItem(text);
+        }
+        catch (WikibaseEntityParsingException e)
+        {
+            throw new WikibaseException(String.format("Error parsing entity for site %s and title %s: %s", site, pageName, e.getMessage()), e);
+        }
     }
 
     /**
@@ -146,7 +153,14 @@ public class Wikibase extends Wiki {
 
         final String text = makeApiCall(getParams, new HashMap<>(), "getWikibaseItem");
 
-        return WikibaseEntityFactory.getWikibaseItem(text);
+        try
+        {
+            return WikibaseEntityFactory.getWikibaseItem(text);
+        }
+        catch (WikibaseEntityParsingException e)
+        {
+            throw new WikibaseException(String.format("Error parsing entity %s: %s", actualId, e.getMessage()), e);
+        }
     }
 
     /**
