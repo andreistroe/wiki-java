@@ -11,7 +11,6 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Set;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.wikibase.data.Claim;
 import org.wikibase.data.Entity;
@@ -20,50 +19,44 @@ import org.wikibase.data.Property;
 
 public class TestWikibaseEntityFactory {
 
-    private Entity q3 = null;
-    private Entity q2 = null;
+    private Entity readQFromXMLFile(int no) throws IOException, WikibaseEntityParsingException {
 
-    @BeforeEach
-    public void before() throws IOException, WikibaseException {
-        q3 = readQFromXMLFile(3);
-        q2 = readQFromXMLFile(2);
-    }
-
-    private Entity readQFromXMLFile(int no) throws IOException, WikibaseException {
-
-        InputStream q3stream = ClassLoader.getSystemResourceAsStream("q" + no + ".xml");
-        BufferedReader q3reader = new BufferedReader(new InputStreamReader(q3stream));
-        StringBuilder q3string = new StringBuilder();
+        InputStream qstream = ClassLoader.getSystemResourceAsStream("q" + no + ".xml");
+        BufferedReader qreader = new BufferedReader(new InputStreamReader(qstream));
+        StringBuilder qstring = new StringBuilder();
         try {
             String line = null;
-            while (null != (line = q3reader.readLine())) {
-                q3string.append(line).append(System.lineSeparator());
+            while (null != (line = qreader.readLine())) {
+                qstring.append(line).append(System.lineSeparator());
             }
         } finally {
-            if (null != q3reader) {
-                q3reader.close();
+            if (null != qreader) {
+                qreader.close();
             }
         }
 
-        return WikibaseEntityFactory.getWikibaseItem(q3string.toString());
+        return WikibaseEntityFactory.getWikibaseItem(qstring.toString());
     }
 
     @Test
-    public void testQ3RoLabel() {
+    public void testQ3RoLabel() throws IOException, WikibaseException, WikibaseEntityParsingException {
+        Entity q3 = readQFromXMLFile(3);
         assertNotNull(q3);
         assertNotNull(q3.getLabels());
         assertEquals(q3.getLabels().get("ro"), "viață");
     }
 
     @Test
-    public void testQ2EnSitelink() {
+    public void testQ2EnSitelink() throws IOException, WikibaseException, WikibaseEntityParsingException {
+        Entity q2 = readQFromXMLFile(2);
         assertNotNull(q2);
         assertNotNull(q2.getSitelinks());
         assertEquals(q2.getSitelinks().get("enwiki").getPageName(), "Earth");
     }
 
     @Test
-    public void testQ2HighestPointItem() {
+    public void testQ2HighestPointItem() throws IOException, WikibaseException, WikibaseEntityParsingException {
+        Entity q2 = readQFromXMLFile(2);
         assertNotNull(q2);
         assertNotNull(q2.getClaims());
         Set<Claim> p610claims = q2.getClaims().get(new Property("P610"));
@@ -77,4 +70,9 @@ public class TestWikibaseEntityFactory {
         assertEquals("513", ((Item) p610claim.getMainsnak().getData()).getEnt().getId());
     }
     
+    @Test
+    public void testLoadQ2641808_20251127() throws IOException, WikibaseException, WikibaseEntityParsingException {
+        Entity e = readQFromXMLFile(2641808);
+        assertNotNull(e);
+    }
 }
