@@ -38,6 +38,7 @@ import java.util.StringTokenizer;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
 
+import javax.security.auth.login.FailedLoginException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -830,6 +831,55 @@ public class Wikibase extends Wiki {
             e.printStackTrace();
         }
         return Collections.emptyList();
+    }
+
+    private String savedUsername;
+    private char[] savedPassword;
+
+    public void loginWithCredentials(String username, char[] password) throws IOException, FailedLoginException
+    {
+        this.savedUsername = username;
+        this.savedPassword = password;
+        login(username, password);
+    }
+
+    private void relogin() throws IOException, FailedLoginException
+    {
+        if (savedUsername != null && savedPassword != null)
+        {
+            log(Level.WARNING, "relogin", "Session expired, attempting re-login...");
+            login(savedUsername, savedPassword);
+        }
+        else
+        {
+            throw new AssertionError("Session expired and no stored credentials for re-login.");
+        }
+    }
+    
+    @FunctionalInterface
+    public interface WikibaseOperation<T>
+    {
+        T execute() throws IOException, WikibaseException;
+    }
+
+    public <T> T executeWithRelogin(WikibaseOperation<T> operation) throws IOException, WikibaseException
+    {
+        try
+        {
+            return operation.execute();
+        }
+        catch (AssertionError e)
+        {
+            try
+            {
+                relogin();
+            }
+            catch (FailedLoginException fle)
+            {
+                throw new WikibaseException("Re-login failed after assertion error: " + e.getMessage(), fle);
+            }
+            return operation.execute();
+        }
     }
 
 }
