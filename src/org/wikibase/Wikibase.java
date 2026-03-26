@@ -395,13 +395,14 @@ public class Wikibase extends Wiki {
         postParams.put("claim", claim.toJSON());
         postParams.put("token", edittoken);
         postParams.put("format", "xml");
-        String text1 = makeApiCall(getParams, postParams, "editClaim");
+        String text = makeApiCall(getParams, postParams, "editClaim");
+        detectUncheckedErrors(text, null, null);
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         String ret = null;
         try {
             DocumentBuilder builder = domBuilderFactory.newDocumentBuilder();
-            Document document = builder.parse(new ByteArrayInputStream(text1.getBytes()));
+            Document document = builder.parse(new ByteArrayInputStream(text.getBytes()));
             XPathFactory xpathFactory = XPathFactory.newInstance();
             XPath xPath = xpathFactory.newXPath();
             XPathExpression apiExpression = xPath.compile("/api[1]");
@@ -453,6 +454,7 @@ public class Wikibase extends Wiki {
         postParams.put("token", edittoken);
         postParams.put("format", "xml");
         String text1 = makeApiCall(getParams, postParams, "removeClaim");
+        detectUncheckedErrors(text1, null, null);
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         String ret = null;
@@ -498,6 +500,7 @@ public class Wikibase extends Wiki {
         postParams.put("token", edittoken);
         postParams.put("format", "xml");
         String text1 = makeApiCall(getParams, postParams, "addQualifier");
+        detectUncheckedErrors(text1, null, null);
         log(Level.INFO, "addQualifier", text1);
         return null;
     }
@@ -547,6 +550,7 @@ public class Wikibase extends Wiki {
         postParams.put("token", edittoken);
         postParams.put("format", "xml");
         String text1 = makeApiCall(getParams, postParams, "addReference");
+        detectUncheckedErrors(text1, null, null);
         log(Level.INFO, "addReference", text1);
         return null;
     }
@@ -566,6 +570,7 @@ public class Wikibase extends Wiki {
         postParams.put("format", "xml");
 
         String text1 = makeApiCall(getParams, postParams, "setLabel");
+        detectUncheckedErrors(text1, null, null);
         log(Level.INFO, "setLabel", text1);
     }
 
@@ -583,6 +588,7 @@ public class Wikibase extends Wiki {
         postParams.put("token", token);
         postParams.put("format", "xml");
         String text1 = makeApiCall(getParams, postParams, "setDescription");
+        detectUncheckedErrors(text1, null, null);
         log(Level.INFO, "setDescription", text1);
     }
 
@@ -592,6 +598,7 @@ public class Wikibase extends Wiki {
         getParams.put("meta", "tokens");
         getParams.put("format", "xml");
         String text = makeApiCall(getParams, new HashMap<>(), "obtainToken");
+        detectUncheckedErrors(text, null, null);
 
         DocumentBuilderFactory domBuilderFactory = DocumentBuilderFactory.newInstance();
         Node tokenNode;
@@ -612,7 +619,7 @@ public class Wikibase extends Wiki {
         }
         if (null == tokenNode || tokenNode.getAttributes() == null
             || tokenNode.getAttributes().getNamedItem("csrftoken") == null) {
-            throw new WikibaseException("Token node not found");
+            throw new WikibaseException("Token node not found. Full response: " + text);
         }
 
         return tokenNode.getAttributes().getNamedItem("csrftoken").getNodeValue();
@@ -765,6 +772,7 @@ public class Wikibase extends Wiki {
         getParams.put("format", "json");
 
         final String text = makeApiCall(getParams, postParams, "searchWikibase");
+        detectUncheckedErrors(text, null, null);
 
         List<Entity> ret;
         try {
