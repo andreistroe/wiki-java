@@ -856,7 +856,10 @@ public class Wikibase extends Wiki {
         if (savedUsername != null && savedPassword != null)
         {
             log(Level.WARNING, "relogin", "Session expired, attempting re-login...");
+            int initialAssertionMode = getAssertionMode();
+            setAssertionMode(ASSERT_NONE);
             login(savedUsername, savedPassword);
+            setAssertionMode(initialAssertionMode);
         }
         else
         {
